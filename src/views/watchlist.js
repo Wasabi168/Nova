@@ -273,23 +273,15 @@ export async function renderWatchlist(root, { navigate }) {
   })
 
   addResults.addEventListener('click', (e) => {
-    const addBtn = e.target.closest('[data-add]')
     const row = e.target.closest('[data-add-symbol]')
-    if (addBtn) {
-      e.stopPropagation()
-      const symbol = addBtn.dataset.add
-      const name = row?.dataset.addName || symbol
-      if (isInWatchlist(symbol)) return
-      addToWatchlist(symbol)
-      pushSearchHistory({ symbol, name })
-      addBtn.textContent = '✓'
-      addBtn.classList.add('added')
-      load()
-      return
-    }
-    if (row) {
-      navigate('stock', { symbol: row.dataset.addSymbol })
-    }
+    if (!row) return
+    const symbol = row.dataset.addSymbol
+    const name = row.dataset.addName || symbol
+    if (isInWatchlist(symbol)) return
+    addToWatchlist(symbol)
+    pushSearchHistory({ symbol, name })
+    closeAddPanel()
+    load()
   })
 
   tabsEl.addEventListener('click', (e) => {
