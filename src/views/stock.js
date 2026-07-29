@@ -127,7 +127,6 @@ export async function renderStock(root, { navigate, params }) {
             </div>
             <div class="ma-editor-actions">
               <button type="button" class="ma-editor-btn" data-action="sub-color-cancel">取消</button>
-              <button type="button" class="ma-editor-btn primary" data-action="sub-color-apply">套用</button>
             </div>
           </div>
         </div>
@@ -533,6 +532,7 @@ export async function renderStock(root, { navigate, params }) {
     if (swatch) {
       editingMaColor = swatch.dataset.color
       syncMaSwatches()
+      applyMaEditor()
       return
     }
     const action = e.target.closest('[data-action]')?.dataset.action
@@ -546,11 +546,11 @@ export async function renderStock(root, { navigate, params }) {
     if (swatch) {
       editingSubColor = swatch.dataset.color
       syncSubColorSwatches()
+      applySubColorEditor()
       return
     }
     const action = e.target.closest('[data-action]')?.dataset.action
     if (action === 'sub-color-cancel') closeSubColorEditor()
-    if (action === 'sub-color-apply') applySubColorEditor()
   })
 
   maPeriodInput.addEventListener('keydown', (e) => {

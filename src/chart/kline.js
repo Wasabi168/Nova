@@ -71,7 +71,7 @@ const UP = '#ef5350'
 const DOWN = '#26a69a'
 
 export const MA_PALETTE = [
-  '#f0b429',
+  '#531dab',
   '#5b8ff9',
   '#73d13d',
   '#ff7a45',
@@ -88,6 +88,7 @@ export const DEFAULT_MA_LINES = [
   { period: 10, color: MA_PALETTE[1] },
   { period: 20, color: MA_PALETTE[2] },
   { period: 60, color: MA_PALETTE[3] },
+  { period: 120, color: MA_PALETTE[4] },
 ]
 
 export const DEFAULT_KD_COLORS = {

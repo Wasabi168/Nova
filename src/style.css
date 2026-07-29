@@ -163,6 +163,30 @@ code {
   margin-bottom: 10px;
 }
 
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sort-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.sort-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sort-chip {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
 .icon-btn,
 .ghost-btn,
 .chip,

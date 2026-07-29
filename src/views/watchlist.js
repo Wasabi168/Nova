@@ -15,6 +15,69 @@ import {
 import { getSymbolMeta, normalizeSymbol, searchLocal } from '../data/symbols.js'
 import { formatPrice, formatChange, changeClass } from '../utils/format.js'
 
+const SORT_KEY = 'nova.watchlist.sort'
+const SORT_MODES = [
+  { id: 'default', label: '自訂' },
+  { id: 'change', label: '漲跌幅' },
+  { id: 'name', label: '名稱' },
+]
+const DEFAULT_SORT_DIR = { change: 'desc', name: 'asc' }
+
+function getSortState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SORT_KEY) || 'null')
+    if (raw && SORT_MODES.some((m) => m.id === raw.mode)) {
+      const dir =
+        raw.mode === 'default'
+          ? 'asc'
+          : raw.dir === 'asc' || raw.dir === 'desc'
+            ? raw.dir
+            : DEFAULT_SORT_DIR[raw.mode] || 'asc'
+      return { mode: raw.mode, dir }
+    }
+    // 相容舊版只存字串 mode
+    if (typeof raw === 'string' && SORT_MODES.some((m) => m.id === raw)) {
+      return { mode: raw, dir: DEFAULT_SORT_DIR[raw] || 'asc' }
+    }
+  } catch {
+    /* ignore */
+  }
+  const legacy = localStorage.getItem(SORT_KEY)
+  if (legacy && SORT_MODES.some((m) => m.id === legacy)) {
+    return { mode: legacy, dir: DEFAULT_SORT_DIR[legacy] || 'asc' }
+  }
+  return { mode: 'default', dir: 'asc' }
+}
+
+function setSortState(state) {
+  localStorage.setItem(SORT_KEY, JSON.stringify(state))
+  return state
+}
+
+function sortSymbols(symbols, quotes, mode, dir) {
+  if (mode === 'default') return [...symbols]
+  const bySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+  const sign = dir === 'asc' ? 1 : -1
+  return [...symbols].sort((a, b) => {
+    const qa = bySymbol.get(a)
+    const qb = bySymbol.get(b)
+    if (mode === 'change') {
+      const pa = qa?.changePercent
+      const pb = qb?.changePercent
+      const aOk = pa != null && Number.isFinite(pa)
+      const bOk = pb != null && Number.isFinite(pb)
+      if (aOk && bOk) return (pa - pb) * sign
+      if (aOk) return -1
+      if (bOk) return 1
+      return a.localeCompare(b, 'zh-TW')
+    }
+    const nameA = qa?.name || getSymbolMeta(a)?.name || a
+    const nameB = qb?.name || getSymbolMeta(b)?.name || b
+    const byName = String(nameA).localeCompare(String(nameB), 'zh-TW')
+    return (byName || a.localeCompare(b, 'zh-TW')) * sign
+  })
+}
+
 export async function renderWatchlist(root, { navigate }) {
   root.innerHTML = `
     <header class="page-header">
@@ -25,6 +88,7 @@ export async function renderWatchlist(root, { navigate }) {
       <button class="icon-btn" data-action="refresh" title="重新整理" aria-label="重新整理">↻</button>
     </header>
     <div class="group-tabs" id="group-tabs"></div>
+    <div class="sort-bar" id="sort-bar"></div>
     <div class="hint-bar">台股接近即時 · 美股約延遲 15 分鐘 · 群組 Tab 可右鍵編輯</div>
     <div class="list-wrap" id="watch-list">
       <div class="state">載入中…</div>
@@ -48,6 +112,7 @@ export async function renderWatchlist(root, { navigate }) {
   `
 
   const tabsEl = root.querySelector('#group-tabs')
+  const sortBarEl = root.querySelector('#sort-bar')
   const listEl = root.querySelector('#watch-list')
   const menuEl = root.querySelector('#ctx-menu')
   const addPanel = root.querySelector('#add-panel')
@@ -56,6 +121,9 @@ export async function renderWatchlist(root, { navigate }) {
   const toggleAddBtn = root.querySelector('[data-action="toggle-add"]')
   let ctxGroupId = null
   let searchTimer = null
+  let { mode: sortMode, dir: sortDir } = getSortState()
+  let cachedSymbols = []
+  let cachedQuotes = []
 
   function hideMenu() {
     menuEl.hidden = true
@@ -109,6 +177,29 @@ export async function renderWatchlist(root, { navigate }) {
     `
   }
 
+  function renderSortBar() {
+    sortBarEl.innerHTML = `
+      <span class="sort-label">排序</span>
+      ${SORT_MODES.map((m) => {
+        const active = m.id === sortMode
+        const arrow =
+          active && m.id !== 'default' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+        return `
+        <button class="chip sort-chip ${active ? 'active' : ''}" data-sort="${m.id}" type="button">
+          ${m.label}${arrow}
+        </button>
+      `
+      }).join('')}
+    `
+  }
+
+  function paintList(symbols, quotes) {
+    cachedSymbols = symbols
+    cachedQuotes = quotes
+    const ordered = sortSymbols(symbols, quotes, sortMode, sortDir)
+    listEl.innerHTML = renderQuoteRows(ordered, quotes)
+  }
+
   function renderQuoteRows(symbols, quotes) {
     const bySymbol = new Map(quotes.map((q) => [q.symbol, q]))
     return symbols
@@ -146,8 +237,11 @@ export async function renderWatchlist(root, { navigate }) {
   async function load() {
     hideMenu()
     renderTabs()
+    renderSortBar()
     const symbols = getWatchlist()
     if (!symbols.length) {
+      cachedSymbols = []
+      cachedQuotes = []
       listEl.innerHTML = `<div class="state">此群組尚未加入標的<br/>點下方「新增股票」搜尋加入</div>`
       return
     }
@@ -155,8 +249,10 @@ export async function renderWatchlist(root, { navigate }) {
     listEl.innerHTML = `<div class="state">載入中…</div>`
     try {
       const quotes = await fetchQuotes(symbols)
-      listEl.innerHTML = renderQuoteRows(symbols, quotes)
+      paintList(symbols, quotes)
     } catch (err) {
+      cachedSymbols = []
+      cachedQuotes = []
       listEl.innerHTML = `<div class="state error">載入失敗：${escapeHtml(err.message)}<br/><button class="link-btn" data-action="retry">重試</button></div>`
       listEl.querySelector('[data-action="retry"]')?.addEventListener('click', load)
     }
@@ -245,6 +341,28 @@ export async function renderWatchlist(root, { navigate }) {
   }
 
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', load)
+
+  sortBarEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sort]')
+    if (!btn) return
+    const next = btn.dataset.sort
+    if (!SORT_MODES.some((m) => m.id === next)) return
+
+    if (next === 'default') {
+      if (sortMode === 'default') return
+      sortMode = 'default'
+      sortDir = 'asc'
+    } else if (next === sortMode) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+    } else {
+      sortMode = next
+      sortDir = DEFAULT_SORT_DIR[next] || 'asc'
+    }
+
+    setSortState({ mode: sortMode, dir: sortDir })
+    renderSortBar()
+    if (cachedSymbols.length) paintList(cachedSymbols, cachedQuotes)
+  })
 
   toggleAddBtn.addEventListener('click', () => {
     if (addPanel.hidden) openAddPanel()
