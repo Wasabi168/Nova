@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // GitHub Pages 專案站：https://Wasabi168.github.io/Nova/
+  base: '/Nova/',
   server: {
     proxy: {
       '/api/yahoo': {
