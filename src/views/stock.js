@@ -107,7 +107,10 @@ export async function renderStock(root, { navigate, params }) {
         </div>
       </div>
     </div>
-    <div class="ohlc-bar" id="ohlc-bar">移動圖表可查看明細</div>
+    <div class="chart-meta-row">
+      <div class="ohlc-bar" id="ohlc-bar">移動圖表可查看明細</div>
+      <div class="swing-range-label" id="swing-range-label" hidden></div>
+    </div>
 
     <div class="chart-stack" id="chart-stack">
       <div class="chart-main" id="chart-main"></div>
@@ -147,6 +150,7 @@ export async function renderStock(root, { navigate, params }) {
   const maPeriodInput = root.querySelector('#ma-period')
   const maSwatches = root.querySelector('#ma-swatches')
   const ohlcBar = root.querySelector('#ohlc-bar')
+  const swingRangeLabel = root.querySelector('#swing-range-label')
   const chartMain = root.querySelector('#chart-main')
   const chartSub = root.querySelector('#chart-sub')
   const subLegend = root.querySelector('#sub-legend')
@@ -480,6 +484,7 @@ export async function renderStock(root, { navigate, params }) {
           kdColors,
           macdColors,
           timeKind: period.kind,
+          swingRangeEl: swingRangeLabel,
         })
         chartView.setData(data.candles, subType, {
           viewBars: period.viewBars,

@@ -194,6 +194,7 @@ export function createKlineView(
     kdColors: initialKdColors,
     macdColors: initialMacdColors,
     timeKind = 'daily',
+    swingRangeEl = null,
   } = {},
 ) {
   let maLines = normalizeMaLines(initialMaLines)
@@ -254,6 +255,13 @@ export function createKlineView(
 
   const highLowLabels = new HighLowLabelsPrimitive()
   candleSeries.attachPrimitive(highLowLabels)
+
+  const swingRangeLabel = swingRangeEl
+  if (swingRangeLabel) {
+    swingRangeLabel.hidden = true
+    swingRangeLabel.textContent = ''
+    swingRangeLabel.classList.remove('up', 'down')
+  }
 
   const subChart = createChart(subEl, {
     ...theme,
@@ -412,20 +420,62 @@ export function createKlineView(
     })
   }
 
+  function updateSwingRangeLabel(high, low) {
+    if (!swingRangeLabel) return
+    if (!high || !low || high.price <= 0 || low.price <= 0 || high.price === low.price) {
+      swingRangeLabel.hidden = true
+      swingRangeLabel.textContent = ''
+      swingRangeLabel.removeAttribute('title')
+      swingRangeLabel.classList.remove('up', 'down')
+      return
+    }
+    // 最低在左、最高在右 → 波段漲幅；(高-低)/低
+    // 最高在左、最低在右 → 波段跌幅；(高-低)/高
+    if (low.index < high.index) {
+      const pct = ((high.price - low.price) / low.price) * 100
+      swingRangeLabel.textContent = `波段漲幅 ${pct.toFixed(2)}%`
+      swingRangeLabel.title =
+        `可見區間最低價在左、最高價在右\n` +
+        `波段漲幅 = (最高價 − 最低價) ÷ 最低價\n` +
+        `= (${formatPrice(high.price)} − ${formatPrice(low.price)}) ÷ ${formatPrice(low.price)}`
+      swingRangeLabel.classList.remove('down')
+      swingRangeLabel.classList.add('up')
+      swingRangeLabel.hidden = false
+    } else if (high.index < low.index) {
+      const pct = ((high.price - low.price) / high.price) * 100
+      swingRangeLabel.textContent = `波段跌幅 ${pct.toFixed(2)}%`
+      swingRangeLabel.title =
+        `可見區間最高價在左、最低價在右\n` +
+        `波段跌幅 = (最高價 − 最低價) ÷ 最高價\n` +
+        `= (${formatPrice(high.price)} − ${formatPrice(low.price)}) ÷ ${formatPrice(high.price)}`
+      swingRangeLabel.classList.remove('up')
+      swingRangeLabel.classList.add('down')
+      swingRangeLabel.hidden = false
+    } else {
+      swingRangeLabel.hidden = true
+      swingRangeLabel.textContent = ''
+      swingRangeLabel.removeAttribute('title')
+      swingRangeLabel.classList.remove('up', 'down')
+    }
+  }
+
   function updateHighLowLabels(range) {
     if (!currentCandles.length) {
       highLowLabels.setPoints([])
+      updateSwingRangeLabel(null, null)
       return
     }
     const logical = range || mainChart.timeScale().getVisibleLogicalRange()
     if (!logical) {
       highLowLabels.setPoints([])
+      updateSwingRangeLabel(null, null)
       return
     }
     const from = Math.max(0, Math.floor(logical.from))
     const to = Math.min(currentCandles.length - 1, Math.ceil(logical.to))
     if (from > to) {
       highLowLabels.setPoints([])
+      updateSwingRangeLabel(null, null)
       return
     }
     const { high, low } = findRangeHighLow(currentCandles.slice(from, to + 1))
@@ -433,6 +483,7 @@ export function createKlineView(
     if (high) hlPoints.push({ ...high, kind: 'high' })
     if (low) hlPoints.push({ ...low, kind: 'low' })
     highLowLabels.setPoints(hlPoints)
+    updateSwingRangeLabel(high, low)
   }
 
   function applyVisibleWindow(candles, viewBars) {
@@ -635,6 +686,12 @@ export function createKlineView(
 
   function destroy() {
     ro.disconnect()
+    if (swingRangeLabel) {
+      swingRangeLabel.hidden = true
+      swingRangeLabel.textContent = ''
+      swingRangeLabel.removeAttribute('title')
+      swingRangeLabel.classList.remove('up', 'down')
+    }
     mainChart.remove()
     subChart.remove()
   }
@@ -747,16 +804,17 @@ function findDayBoundaryTimes(candles) {
   return times
 }
 
-/** 可見區間最高／最低價位置 */
+/** 可見區間最高／最低價位置（含相對索引，供判斷左右） */
 function findRangeHighLow(candles) {
   let high = null
   let low = null
-  for (const c of candles) {
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i]
     const h = Number.isFinite(c.high) ? c.high : c.close
     const l = Number.isFinite(c.low) ? c.low : c.close
     if (h == null || !Number.isFinite(h) || l == null || !Number.isFinite(l)) continue
-    if (!high || h > high.price) high = { time: c.time, price: h }
-    if (!low || l < low.price) low = { time: c.time, price: l }
+    if (!high || h > high.price) high = { time: c.time, price: h, index: i }
+    if (!low || l < low.price) low = { time: c.time, price: l, index: i }
   }
   return { high, low }
 }

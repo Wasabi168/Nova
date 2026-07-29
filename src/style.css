@@ -873,12 +873,22 @@ code {
   font-size: 12px;
   color: var(--muted);
   min-height: 20px;
-  margin-bottom: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .ohlc-bar b {
   color: var(--text);
   font-weight: 600;
+}
+
+.chart-meta-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  min-height: 20px;
 }
 
 .chart-stack {
@@ -896,6 +906,25 @@ code {
   flex: 1.7;
   min-height: 260px;
   position: relative;
+}
+
+.swing-range-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-align: right;
+  cursor: help;
+}
+
+.swing-range-label.up {
+  color: var(--up);
+}
+
+.swing-range-label.down {
+  color: var(--down);
 }
 
 .chart-main.solo {
