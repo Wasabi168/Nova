@@ -1,0 +1,17 @@
+{
+  "name": "nova-chart",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.1.1"
+  },
+  "dependencies": {
+    "lightweight-charts": "^5.2.0"
+  }
+}
