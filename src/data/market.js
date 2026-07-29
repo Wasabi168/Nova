@@ -20,6 +20,21 @@ export function saveSettings(partial) {
   return next
 }
 
+/**
+ * 覆蓋寫入頁面設定（不做 merge；匯入後以檔案內容為準）
+ * @param {any} next
+ */
+export function replaceSettings(next = {}) {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    next = {}
+  }
+  // 確保 proxyBase 為字串（其餘欄位沿用 getSettings 的結構）
+  const proxyBase = typeof next.proxyBase === 'string' ? next.proxyBase.trim() : ''
+  const rest = { ...next, proxyBase }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(rest))
+  return getSettings()
+}
+
 function yahooBase() {
   const { proxyBase } = getSettings()
   if (proxyBase) return proxyBase.replace(/\/$/, '')

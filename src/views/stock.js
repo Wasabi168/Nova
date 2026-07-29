@@ -172,11 +172,11 @@ export async function renderStock(root, { navigate, params }) {
       .map((g) => {
         const checked = isInWatchlist(symbol, g.id)
         return `
-          <button type="button" class="watch-menu-item ${checked ? 'on' : ''}" data-group-id="${g.id}">
+          <div class="watch-menu-item ${checked ? 'on' : ''}" data-group-id="${g.id}">
             <span class="watch-check">${checked ? '★' : '☆'}</span>
             <span class="watch-name">${escapeHtml(g.name)}</span>
-            <span class="watch-action">${checked ? '移除' : '加入'}</span>
-          </button>
+            <input class="watch-box" type="checkbox" ${checked ? 'checked' : ''} aria-label="${escapeHtml(g.name)}" />
+          </div>
         `
       })
       .join('')
@@ -505,7 +505,8 @@ export async function renderStock(root, { navigate, params }) {
 
   watchMenuList.addEventListener('click', (e) => {
     const item = e.target.closest('[data-group-id]')
-    if (!item) return
+    if (!item || !watchMenuList.contains(item)) return
+    e.preventDefault()
     e.stopPropagation()
     toggleWatchlist(symbol, item.dataset.groupId)
     syncWatchBtn()

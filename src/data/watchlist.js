@@ -173,6 +173,59 @@ export function deleteGroup(groupId) {
   return store.groups
 }
 
+function uniqPreserveOrder(items) {
+  const out = []
+  const seen = new Set()
+  for (const item of items) {
+    if (seen.has(item)) continue
+    seen.add(item)
+    out.push(item)
+  }
+  return out
+}
+
+/**
+ * 覆蓋寫入自選群組資料（不做 merge；匯入後以檔案內容為準）
+ * @param {{groups:any[], activeGroupId?:string}} payload
+ */
+export function replaceWatchlistStore({ groups, activeGroupId } = {}) {
+  if (!Array.isArray(groups) || !groups.length) {
+    throw new Error('備份檔的群組資料無效或為空')
+  }
+
+  const nextGroups = groups.map((g) => {
+    const rawId = g?.id
+    const id = typeof rawId === 'string' && rawId.trim() ? rawId.trim() : uid()
+    const name = typeof g?.name === 'string' ? g.name.trim() : '未命名'
+
+    const rawSymbols = Array.isArray(g?.symbols) ? g.symbols : []
+    const normalized = rawSymbols
+      .map((s) => {
+        const fixed = normalizeSymbol(s)
+        return fixed || (s != null ? String(s).trim().toUpperCase() : '')
+      })
+      .filter(Boolean)
+
+    return {
+      id,
+      name: name || '未命名',
+      symbols: uniqPreserveOrder(normalized),
+    }
+  })
+
+  // 至少要有一個群組
+  const cleanedGroups = nextGroups.filter((g) => g?.id)
+  if (!cleanedGroups.length) throw new Error('備份檔的群組資料無效')
+
+  // 避免匯入後 activeGroupId 指到不存在的群組
+  const nextActiveGroupId = cleanedGroups.some((g) => g.id === activeGroupId) ? activeGroupId : cleanedGroups[0].id
+
+  const nextStore = { groups: cleanedGroups }
+  writeStore(nextStore)
+  setActiveGroupId(nextActiveGroupId)
+  return nextStore
+}
+
 const HISTORY_KEY = 'nova.searchHistory'
 
 export function getSearchHistory() {
