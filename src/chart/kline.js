@@ -144,6 +144,8 @@ function chartTheme() {
       background: { type: ColorType.Solid, color: '#0d1117' },
       textColor: '#9aa4b2',
       fontFamily: '"Noto Sans TC", "Segoe UI", sans-serif',
+      // 授權出處改於設定頁「關於」標示；關閉圖表內建 logo
+      attributionLogo: false,
     },
     grid: {
       vertLines: { color: 'rgba(255,255,255,0.04)' },

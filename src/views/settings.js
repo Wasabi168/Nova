@@ -39,6 +39,7 @@ export async function renderSettings(root) {
     <section class="card-block">
       <h2>關於</h2>
       <p class="muted">Nova — 靜態網頁 K 線看盤。自選支援多群組；操作風格參考籌碼K。</p>
+      <p class="muted">圖表使用 TradingView Lightweight Charts™。<br />Copyright (c) 2025 TradingView, Inc. <a class="text-link" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">https://www.tradingview.com/</a></p>
     </section>
   `
 
