@@ -471,6 +471,8 @@ export async function renderStock(root, { navigate, params }) {
         chartView = createIntradayView(chartMain, { onCrosshair: updateOhlc })
         chartView.setData(data.candles, data.chartPreviousClose ?? quote?.previousClose, {
           tradingDays: period.tradingDays,
+          symbol,
+          gmtOffset: data.gmtOffset ?? 0,
         })
       } else {
         const keepRange = !WINDOW_PERIOD_IDS.has(period.id)

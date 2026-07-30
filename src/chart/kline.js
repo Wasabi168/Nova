@@ -11,6 +11,7 @@ import {
 } from 'lightweight-charts'
 import { calcSMA, calcMACD, calcKD, calcIntradayAvgPrice, toLineData } from './indicators.js'
 import { formatPrice, formatKlineBarTime } from '../utils/format.js'
+import { sessionForSymbol, buildSessionMinuteTimes } from '../data/marketHours.js'
 
 /** Lightweight Charts 的 Time → Date（以真實 UTC 瞬間解讀，再用本地時區顯示） */
 function timeToDate(time) {
@@ -804,6 +805,16 @@ function findDayBoundaryTimes(candles) {
   return times
 }
 
+/** 依連續時間軸找日界（開～收補齊後，跨日會出現 >1 分鐘空隙） */
+function findDayBoundaryTimesFromTimes(times) {
+  if (times.length < 2) return []
+  const out = []
+  for (let i = 1; i < times.length; i++) {
+    if (times[i] - times[i - 1] > 60) out.push(times[i])
+  }
+  return out
+}
+
 /** 可見區間最高／最低價位置（含相對索引，供判斷左右） */
 function findRangeHighLow(candles) {
   let high = null
@@ -1035,12 +1046,23 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
     scaleMargins: { top: 0.82, bottom: 0 },
   })
 
+  // 隱藏序列：塞滿開～收每分鐘 whitespace，讓時間軸固定為完整交易時段
+  const sessionAxisSeries = chart.addSeries(LineSeries, {
+    color: 'rgba(0,0,0,0)',
+    lineWidth: 1,
+    crosshairMarkerVisible: false,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    pointMarkersVisible: false,
+  })
+
   const daySeparators = new DaySeparatorsPrimitive()
   baselineSeries.attachPrimitive(daySeparators)
   const highLowLabels = new HighLowLabelsPrimitive()
   baselineSeries.attachPrimitive(highLowLabels)
 
   let rows = []
+  let sessionTimes = []
   let avgValues = []
   let prevCloseRef = null
   let prevCloseLine = null
@@ -1067,7 +1089,7 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
     })
   }
 
-  /** 橫線對齊該時間點成交價，且垂直線不超出第一／最後一筆 */
+  /** 橫線對齊該時間點成交價，且垂直線不超出第一／最後一筆實價 */
   function syncCrosshairToIndex(idx) {
     const bar = rows[idx]
     if (!bar) return
@@ -1101,6 +1123,16 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
       idx = rows.length - 1
     } else if (param.time != null) {
       idx = rows.findIndex((c) => c.time === param.time)
+      // 停在開～收空白分鐘時，對齊到最近一筆已有成交的分時
+      if (idx < 0 && typeof param.time === 'number') {
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (rows[i].time <= param.time) {
+            idx = i
+            break
+          }
+        }
+        if (idx < 0) idx = 0
+      }
     }
 
     if (idx < 0) {
@@ -1121,20 +1153,25 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
   }
 
   function fitIntradayContent() {
-    chart.timeScale().applyOptions({ minBarSpacing: intradayMinBarSpacing(rows.length) })
+    const n = sessionTimes.length || rows.length
+    chart.timeScale().applyOptions({ minBarSpacing: intradayMinBarSpacing(n) })
     // 明確指定邏輯範圍，避免 fitContent 受舊 minBarSpacing 夾住
-    if (rows.length > 1) {
-      chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: rows.length - 0.5 })
+    if (n > 1) {
+      chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: n - 0.5 })
     } else {
       chart.timeScale().fitContent()
     }
   }
 
-  function setData(candles, previousClose, { tradingDays } = {}) {
+  function setData(candles, previousClose, { tradingDays, symbol, gmtOffset = 0 } = {}) {
     const filtered = filterLastTradingDays(candles, tradingDays)
     rows = filtered
     const pc = previousClose ?? filtered[0]?.open ?? 0
     prevCloseRef = previousClose != null ? previousClose : (filtered[0]?.open ?? null)
+
+    const session = sessionForSymbol(symbol)
+    sessionTimes = buildSessionMinuteTimes(filtered, session, gmtOffset)
+    sessionAxisSeries.setData(sessionTimes.map((time) => ({ time })))
 
     baselineSeries.applyOptions({
       baseValue: { type: 'price', price: pc },
@@ -1155,7 +1192,11 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
       })),
     )
 
-    daySeparators.setTimes(findDayBoundaryTimes(filtered))
+    daySeparators.setTimes(
+      sessionTimes.length
+        ? findDayBoundaryTimesFromTimes(sessionTimes)
+        : findDayBoundaryTimes(filtered),
+    )
 
     const { high, low } = findRangeHighLow(filtered)
     const hlPoints = []
@@ -1183,14 +1224,15 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
 
   chart.subscribeCrosshairMove(clampCrosshairToData)
   chart.subscribeDblClick(() => {
-    if (!rows.length) return
+    if (!rows.length && !sessionTimes.length) return
     fitIntradayContent()
   })
 
   function resize() {
     chart.applyOptions({ width: mainEl.clientWidth, height: mainEl.clientHeight })
-    if (rows.length) {
-      chart.timeScale().applyOptions({ minBarSpacing: intradayMinBarSpacing(rows.length) })
+    const n = sessionTimes.length || rows.length
+    if (n) {
+      chart.timeScale().applyOptions({ minBarSpacing: intradayMinBarSpacing(n) })
     }
   }
 

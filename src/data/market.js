@@ -281,6 +281,7 @@ export async function fetchChart(symbol, { interval = '1d', range = '6mo' } = {}
     dayHigh: num(meta.regularMarketDayHigh),
     dayLow: num(meta.regularMarketDayLow),
     volume: num(meta.regularMarketVolume, 0),
+    gmtOffset,
     candles,
     source: 'yahoo',
   }
