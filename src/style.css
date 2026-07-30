@@ -163,7 +163,8 @@ code {
   margin-bottom: 10px;
 }
 
-.sort-bar {
+.sort-bar,
+.layout-bar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -172,8 +173,17 @@ code {
   scrollbar-width: none;
 }
 
-.sort-bar::-webkit-scrollbar {
+.sort-bar::-webkit-scrollbar,
+.layout-bar::-webkit-scrollbar {
   display: none;
+}
+
+.sort-modes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 
 .sort-label {
@@ -182,9 +192,34 @@ code {
   font-size: 12px;
 }
 
-.sort-chip {
+.sort-chip,
+.view-chip {
   padding: 6px 12px;
   font-size: 12px;
+}
+
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.view-toggle .view-chip {
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+}
+
+.view-toggle .view-chip.active {
+  background: rgba(91, 143, 249, 0.18);
+  color: #dbe7ff;
 }
 
 .icon-btn,
@@ -388,6 +423,16 @@ code {
   gap: 8px;
 }
 
+.list-wrap.layout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.list-wrap.layout-grid > .state {
+  grid-column: 1 / -1;
+}
+
 .quote-row {
   display: flex;
   align-items: center;
@@ -399,6 +444,14 @@ code {
   cursor: pointer;
 }
 
+.layout-grid .quote-row {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 96px;
+  padding: 12px;
+}
+
 .quote-main {
   flex: 1;
   min-width: 0;
@@ -408,6 +461,14 @@ code {
   gap: 12px;
 }
 
+.layout-grid .quote-main {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 10px;
+  height: 100%;
+}
+
 .quote-title {
   display: flex;
   flex-direction: column;
@@ -415,11 +476,19 @@ code {
   min-width: 0;
 }
 
+.layout-grid .quote-row:has(.ghost-btn) .quote-title {
+  padding-right: 28px;
+}
+
 .quote-title strong {
   font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.layout-grid .quote-title strong {
+  font-size: 14px;
 }
 
 .code {
@@ -434,16 +503,33 @@ code {
   gap: 2px;
 }
 
+.layout-grid .quote-price {
+  text-align: left;
+}
+
 .quote-price .price {
   font-variant-numeric: tabular-nums;
   font-size: 16px;
   font-weight: 650;
 }
 
+.layout-grid .quote-price .price {
+  font-size: 17px;
+}
+
 .quote-price .chg,
 .hero-chg {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.layout-grid .ghost-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
 }
 
 .up {

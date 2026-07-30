@@ -1,8 +1,16 @@
 import { MARKET_SECTIONS } from '../data/symbols.js'
 import { fetchQuotes } from '../data/market.js'
 import { formatPrice, formatChange, changeClass } from '../utils/format.js'
+import {
+  getViewLayout,
+  setViewLayout,
+  applyViewLayout,
+  renderViewToggle,
+} from '../utils/viewLayout.js'
 
 export async function renderMarket(root, { navigate }) {
+  let viewLayout = getViewLayout()
+
   root.innerHTML = `
     <header class="page-header">
       <div>
@@ -16,12 +24,25 @@ export async function renderMarket(root, { navigate }) {
         (s, i) => `<button class="chip ${i === 0 ? 'active' : ''}" data-section="${s.id}">${s.title}</button>`,
       ).join('')}
     </div>
+    <div class="layout-bar" id="layout-bar">
+      <span class="sort-label">顯示</span>
+      ${renderViewToggle(viewLayout)}
+    </div>
     <div class="list-wrap" id="market-list"><div class="state">載入中…</div></div>
   `
 
   let activeId = MARKET_SECTIONS[0].id
   const listEl = root.querySelector('#market-list')
   const tabsEl = root.querySelector('#market-tabs')
+  const layoutBarEl = root.querySelector('#layout-bar')
+  applyViewLayout(listEl, viewLayout)
+
+  function renderLayoutBar() {
+    layoutBarEl.innerHTML = `
+      <span class="sort-label">顯示</span>
+      ${renderViewToggle(viewLayout)}
+    `
+  }
 
   async function load() {
     const section = MARKET_SECTIONS.find((s) => s.id === activeId)
@@ -64,6 +85,16 @@ export async function renderMarket(root, { navigate }) {
     activeId = btn.dataset.section
     tabsEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c === btn))
     load()
+  })
+
+  layoutBarEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-layout]')
+    if (!btn) return
+    const next = btn.dataset.layout
+    if (next === viewLayout) return
+    viewLayout = setViewLayout(next)
+    applyViewLayout(listEl, viewLayout)
+    renderLayoutBar()
   })
 
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', load)

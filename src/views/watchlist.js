@@ -14,6 +14,12 @@ import {
 } from '../data/watchlist.js'
 import { getSymbolMeta, normalizeSymbol, searchLocal } from '../data/symbols.js'
 import { formatPrice, formatChange, changeClass } from '../utils/format.js'
+import {
+  getViewLayout,
+  setViewLayout,
+  applyViewLayout,
+  renderViewToggle,
+} from '../utils/viewLayout.js'
 
 const SORT_KEY = 'nova.watchlist.sort'
 const SORT_MODES = [
@@ -122,8 +128,10 @@ export async function renderWatchlist(root, { navigate }) {
   let ctxGroupId = null
   let searchTimer = null
   let { mode: sortMode, dir: sortDir } = getSortState()
+  let viewLayout = getViewLayout()
   let cachedSymbols = []
   let cachedQuotes = []
+  applyViewLayout(listEl, viewLayout)
 
   function hideMenu() {
     menuEl.hidden = true
@@ -179,17 +187,20 @@ export async function renderWatchlist(root, { navigate }) {
 
   function renderSortBar() {
     sortBarEl.innerHTML = `
-      <span class="sort-label">排序</span>
-      ${SORT_MODES.map((m) => {
-        const active = m.id === sortMode
-        const arrow =
-          active && m.id !== 'default' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
-        return `
-        <button class="chip sort-chip ${active ? 'active' : ''}" data-sort="${m.id}" type="button">
-          ${m.label}${arrow}
-        </button>
-      `
-      }).join('')}
+      <div class="sort-modes">
+        <span class="sort-label">排序</span>
+        ${SORT_MODES.map((m) => {
+          const active = m.id === sortMode
+          const arrow =
+            active && m.id !== 'default' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+          return `
+          <button class="chip sort-chip ${active ? 'active' : ''}" data-sort="${m.id}" type="button">
+            ${m.label}${arrow}
+          </button>
+        `
+        }).join('')}
+      </div>
+      ${renderViewToggle(viewLayout)}
     `
   }
 
@@ -343,6 +354,16 @@ export async function renderWatchlist(root, { navigate }) {
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', load)
 
   sortBarEl.addEventListener('click', (e) => {
+    const layoutBtn = e.target.closest('[data-layout]')
+    if (layoutBtn) {
+      const next = layoutBtn.dataset.layout
+      if (next === viewLayout) return
+      viewLayout = setViewLayout(next)
+      applyViewLayout(listEl, viewLayout)
+      renderSortBar()
+      return
+    }
+
     const btn = e.target.closest('[data-sort]')
     if (!btn) return
     const next = btn.dataset.sort
