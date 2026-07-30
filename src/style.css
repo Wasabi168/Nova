@@ -746,16 +746,6 @@ code {
   margin: 8px 0 0;
 }
 
-.text-link {
-  color: #79c0ff;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.text-link:hover {
-  color: #a5d6ff;
-}
-
 .field {
   display: flex;
   flex-direction: column;
