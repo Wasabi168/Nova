@@ -95,7 +95,7 @@ export async function renderWatchlist(root, { navigate }) {
     </header>
     <div class="group-tabs" id="group-tabs"></div>
     <div class="sort-bar" id="sort-bar"></div>
-    <div class="hint-bar">台股接近即時 · 美股約延遲 15 分鐘 · 群組 Tab 可右鍵編輯</div>
+    <div class="hint-bar">台股接近即時 · 美股約延遲 15 分鐘 · 群組 Tab 可右鍵或長按編輯</div>
     <div class="list-wrap" id="watch-list">
       <div class="state">載入中…</div>
     </div>
@@ -135,7 +135,20 @@ export async function renderWatchlist(root, { navigate }) {
   let softGen = 0
   let softRefreshing = false
   let refreshTimer = null
+  let longPressTimer = null
+  let longPressTriggered = false
+  let longPressStart = null
+  const LONG_PRESS_MS = 500
+  const LONG_PRESS_MOVE_PX = 10
   applyViewLayout(listEl, viewLayout)
+
+  function clearLongPress() {
+    if (longPressTimer != null) {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+    }
+    longPressStart = null
+  }
 
   function hideMenu() {
     menuEl.hidden = true
@@ -178,7 +191,7 @@ export async function renderWatchlist(root, { navigate }) {
       ${groups
         .map(
           (g) => `
-        <button class="chip group-chip ${g.id === active ? 'active' : ''}" data-group="${g.id}" title="右鍵可編輯群組">
+        <button class="chip group-chip ${g.id === active ? 'active' : ''}" data-group="${g.id}" title="右鍵或長按可編輯群組">
           ${escapeHtml(g.name)}
           <span class="group-count">${g.symbols.length}</span>
         </button>
@@ -478,6 +491,11 @@ export async function renderWatchlist(root, { navigate }) {
   })
 
   tabsEl.addEventListener('click', (e) => {
+    if (longPressTriggered) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
     hideMenu()
     const add = e.target.closest('[data-action="add-group"]')
     if (add) {
@@ -502,6 +520,71 @@ export async function renderWatchlist(root, { navigate }) {
     showMenu(e.clientX, e.clientY, tab.dataset.group)
   })
 
+  tabsEl.addEventListener(
+    'touchstart',
+    (e) => {
+      const tab = e.target.closest('[data-group]')
+      if (!tab) return
+      const touch = e.touches[0]
+      if (!touch) return
+      clearLongPress()
+      longPressTriggered = false
+      longPressStart = { x: touch.clientX, y: touch.clientY, groupId: tab.dataset.group }
+      longPressTimer = setTimeout(() => {
+        if (!longPressStart) return
+        longPressTriggered = true
+        showMenu(longPressStart.x, longPressStart.y, longPressStart.groupId)
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate(25)
+          } catch {
+            /* ignore */
+          }
+        }
+      }, LONG_PRESS_MS)
+    },
+    { passive: true },
+  )
+
+  tabsEl.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!longPressStart || longPressTimer == null) return
+      const touch = e.touches[0]
+      if (!touch) return
+      const dx = touch.clientX - longPressStart.x
+      const dy = touch.clientY - longPressStart.y
+      if (dx * dx + dy * dy > LONG_PRESS_MOVE_PX * LONG_PRESS_MOVE_PX) {
+        clearLongPress()
+      }
+    },
+    { passive: true },
+  )
+
+  tabsEl.addEventListener(
+    'touchend',
+    (e) => {
+      clearLongPress()
+      if (longPressTriggered) {
+        e.preventDefault()
+        // 等合成 click 過完再清除，避免選單被立刻關掉
+        setTimeout(() => {
+          longPressTriggered = false
+        }, 0)
+      }
+    },
+    { passive: false },
+  )
+
+  tabsEl.addEventListener('touchcancel', () => {
+    clearLongPress()
+    if (longPressTriggered) {
+      setTimeout(() => {
+        longPressTriggered = false
+      }, 0)
+    }
+  })
+
   menuEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-ctx]')
     if (!btn || !ctxGroupId) return
@@ -513,6 +596,7 @@ export async function renderWatchlist(root, { navigate }) {
   })
 
   document.addEventListener('click', (e) => {
+    if (longPressTriggered) return
     if (!menuEl.hidden && !menuEl.contains(e.target)) hideMenu()
   })
 
@@ -539,6 +623,7 @@ export async function renderWatchlist(root, { navigate }) {
   return () => {
     disposed = true
     softGen += 1
+    clearLongPress()
     stopAutoRefresh()
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
