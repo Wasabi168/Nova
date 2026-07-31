@@ -1,4 +1,4 @@
-import { fetchQuotes, searchYahoo } from '../data/market.js'
+import { fetchQuotes, searchYahoo, QUOTE_REFRESH_MS } from '../data/market.js'
 import {
   getGroups,
   getActiveGroupId,
@@ -131,6 +131,10 @@ export async function renderWatchlist(root, { navigate }) {
   let viewLayout = getViewLayout()
   let cachedSymbols = []
   let cachedQuotes = []
+  let disposed = false
+  let softGen = 0
+  let softRefreshing = false
+  let refreshTimer = null
   applyViewLayout(listEl, viewLayout)
 
   function hideMenu() {
@@ -246,6 +250,7 @@ export async function renderWatchlist(root, { navigate }) {
   }
 
   async function load() {
+    softGen += 1
     hideMenu()
     renderTabs()
     renderSortBar()
@@ -260,12 +265,61 @@ export async function renderWatchlist(root, { navigate }) {
     listEl.innerHTML = `<div class="state">載入中…</div>`
     try {
       const quotes = await fetchQuotes(symbols)
+      if (disposed) return
       paintList(symbols, quotes)
     } catch (err) {
+      if (disposed) return
       cachedSymbols = []
       cachedQuotes = []
       listEl.innerHTML = `<div class="state error">載入失敗：${escapeHtml(err.message)}<br/><button class="link-btn" data-action="retry">重試</button></div>`
       listEl.querySelector('[data-action="retry"]')?.addEventListener('click', load)
+    }
+  }
+
+  async function softRefresh() {
+    if (disposed || softRefreshing || document.hidden) return
+    softRefreshing = true
+    const gen = ++softGen
+    const symbols = getWatchlist()
+
+    try {
+      if (!symbols.length) {
+        cachedSymbols = []
+        cachedQuotes = []
+        listEl.innerHTML = `<div class="state">此群組尚未加入標的<br/>點下方「新增股票」搜尋加入</div>`
+        renderTabs()
+        return
+      }
+
+      const quotes = await fetchQuotes(symbols)
+      if (disposed || gen !== softGen) return
+      paintList(symbols, quotes)
+      renderTabs()
+    } catch {
+      // 保留畫面上一次成功資料
+    } finally {
+      softRefreshing = false
+    }
+  }
+
+  function stopAutoRefresh() {
+    if (refreshTimer != null) {
+      clearInterval(refreshTimer)
+      refreshTimer = null
+    }
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh()
+    if (disposed || document.hidden) return
+    refreshTimer = setInterval(softRefresh, QUOTE_REFRESH_MS)
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) stopAutoRefresh()
+    else {
+      softRefresh()
+      startAutoRefresh()
     }
   }
 
@@ -478,7 +532,16 @@ export async function renderWatchlist(root, { navigate }) {
     if (row) navigate('stock', { symbol: row.dataset.symbol })
   })
 
+  document.addEventListener('visibilitychange', onVisibilityChange)
   await load()
+  startAutoRefresh()
+
+  return () => {
+    disposed = true
+    softGen += 1
+    stopAutoRefresh()
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+  }
 }
 
 function escapeHtml(str) {

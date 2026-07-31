@@ -1165,7 +1165,7 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
     }
   }
 
-  function setData(candles, previousClose, { tradingDays, symbol, gmtOffset = 0 } = {}) {
+  function setData(candles, previousClose, { tradingDays, symbol, gmtOffset = 0, preserveView = false } = {}) {
     const filtered = filterLastTradingDays(candles, tradingDays)
     rows = filtered
     const pc = previousClose ?? filtered[0]?.open ?? 0
@@ -1221,7 +1221,7 @@ export function createIntradayView(mainEl, { onCrosshair } = {}) {
       })
     }
 
-    fitIntradayContent()
+    if (!preserveView) fitIntradayContent()
   }
 
   chart.subscribeCrosshairMove(clampCrosshairToData)

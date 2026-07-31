@@ -1,4 +1,11 @@
-﻿import { fetchChart, fetchQuote, PERIODS, getSettings, saveSettings } from '../data/market.js'
+﻿import {
+  fetchChart,
+  fetchQuote,
+  PERIODS,
+  getSettings,
+  saveSettings,
+  QUOTE_REFRESH_MS,
+} from '../data/market.js'
 import { getSymbolMeta, resolveDisplayName, formatDataSource } from '../data/symbols.js'
 import {
   getGroups,
@@ -56,6 +63,10 @@ export async function renderStock(root, { navigate, params }) {
   let editingMaColor = MA_PALETTE[0]
   let editingSubKey = null
   let editingSubColor = MA_PALETTE[0]
+  let disposed = false
+  let softGen = 0
+  let softRefreshing = false
+  let refreshTimer = null
 
   root.innerHTML = `
     <header class="stock-header">
@@ -212,7 +223,7 @@ export async function renderStock(root, { navigate, params }) {
     }
   }
 
-  function renderQuote() {
+  function renderQuote({ trackHistory = true } = {}) {
     if (!quote) {
       quotePanel.innerHTML = `<div class="state">暫無報價</div>`
       updateSourceBadge()
@@ -236,7 +247,7 @@ export async function renderStock(root, { navigate, params }) {
       </div>
     `
     root.querySelector('#stock-name').textContent = displayName
-    pushSearchHistory({ symbol, name: displayName })
+    if (trackHistory) pushSearchHistory({ symbol, name: displayName })
     updateSourceBadge()
   }
 
@@ -442,6 +453,7 @@ export async function renderStock(root, { navigate, params }) {
   }
 
   async function loadChart() {
+    softGen += 1
     const period = PERIODS.find((p) => p.id === periodId) || PERIODS[4]
     const my = ++inflight
     const prevTimeRange = chartView?.getVisibleTimeRange?.() || null
@@ -453,7 +465,7 @@ export async function renderStock(root, { navigate, params }) {
         interval: period.interval,
         range: period.range,
       })
-      if (my !== inflight) return
+      if (my !== inflight || disposed) return
 
       chartSource = data.source || 'yahoo'
       updateSourceBadge()
@@ -494,8 +506,76 @@ export async function renderStock(root, { navigate, params }) {
         })
       }
     } catch (err) {
-      if (my !== inflight) return
+      if (my !== inflight || disposed) return
       chartMain.innerHTML = `<div class="state chart-state error">圖表載入失敗：${err.message}</div>`
+    }
+  }
+
+  async function softRefresh() {
+    if (disposed || softRefreshing || document.hidden) return
+    softRefreshing = true
+    const gen = ++softGen
+    const periodAtStart = periodId
+    const tabAtStart = tab
+    const period = PERIODS.find((p) => p.id === periodId) || PERIODS[4]
+
+    try {
+      const [nextQuote, chartData] = await Promise.all([
+        fetchQuote(symbol).catch(() => null),
+        fetchChart(symbol, {
+          interval: period.interval,
+          range: period.range,
+        }).catch(() => null),
+      ])
+      if (disposed || gen !== softGen) return
+      if (periodId !== periodAtStart || tab !== tabAtStart) return
+
+      if (nextQuote) {
+        quote = nextQuote
+        renderQuote({ trackHistory: false })
+      }
+
+      if (!chartData?.candles?.length || !chartView) return
+
+      chartSource = chartData.source || 'yahoo'
+      updateSourceBadge()
+
+      if (tab === 'intraday' || period.kind === 'intraday') {
+        chartView.setData(chartData.candles, chartData.chartPreviousClose ?? quote?.previousClose, {
+          tradingDays: period.tradingDays,
+          symbol,
+          gmtOffset: chartData.gmtOffset ?? 0,
+          preserveView: true,
+        })
+      } else {
+        chartView.setData(chartData.candles, subType, {
+          viewBars: period.viewBars,
+          preserveView: true,
+        })
+      }
+    } finally {
+      softRefreshing = false
+    }
+  }
+
+  function stopAutoRefresh() {
+    if (refreshTimer != null) {
+      clearInterval(refreshTimer)
+      refreshTimer = null
+    }
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh()
+    if (disposed || document.hidden) return
+    refreshTimer = setInterval(softRefresh, QUOTE_REFRESH_MS)
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) stopAutoRefresh()
+    else {
+      softRefresh()
+      startAutoRefresh()
     }
   }
 
@@ -625,9 +705,15 @@ export async function renderStock(root, { navigate, params }) {
   }
 
   await loadChart()
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  startAutoRefresh()
 
   return () => {
+    disposed = true
+    softGen += 1
     inflight += 1
+    stopAutoRefresh()
+    document.removeEventListener('visibilitychange', onVisibilityChange)
     destroyChart()
     document.removeEventListener('click', onDocClick)
     document.removeEventListener('keydown', onDocKey)

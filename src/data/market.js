@@ -3,6 +3,9 @@ import { isTaiwanSymbol, fetchTwseQuotes } from './twse.js'
 
 const SETTINGS_KEY = 'nova.settings'
 
+/** 報價／圖表自動刷新間隔（毫秒） */
+export const QUOTE_REFRESH_MS = 10_000
+
 export function getSettings() {
   try {
     return {
@@ -197,7 +200,9 @@ export async function fetchQuote(symbol) {
   const last = data.candles[data.candles.length - 1]
   const prevCandle = data.candles[data.candles.length - 2]
   const price = data.regularMarketPrice ?? last?.close ?? null
-  const prev = data.chartPreviousClose ?? prevCandle?.close ?? null
+  // Yahoo 的 chartPreviousClose 在多日 range 是「圖表區間前收」，不是昨收；
+  // 日漲跌應以前一根日 K 收盤為準（例如 SOXX range=5d 時 chartPrev=551、昨收=465）。
+  const prev = prevCandle?.close ?? data.chartPreviousClose ?? null
   const change = price != null && prev != null ? price - prev : null
   const changePercent = change != null && prev ? (change / prev) * 100 : null
 
