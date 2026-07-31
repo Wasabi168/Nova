@@ -1,5 +1,5 @@
 import { MARKET_SECTIONS } from '../data/symbols.js'
-import { fetchQuotes } from '../data/market.js'
+import { fetchQuotes, QUOTE_REFRESH_MS } from '../data/market.js'
 import { formatPrice, formatChange, changeClass } from '../utils/format.js'
 import {
   getViewLayout,
@@ -35,6 +35,10 @@ export async function renderMarket(root, { navigate }) {
   const listEl = root.querySelector('#market-list')
   const tabsEl = root.querySelector('#market-tabs')
   const layoutBarEl = root.querySelector('#layout-bar')
+  let disposed = false
+  let softGen = 0
+  let softRefreshing = false
+  let refreshTimer = null
   applyViewLayout(listEl, viewLayout)
 
   function renderLayoutBar() {
@@ -44,7 +48,32 @@ export async function renderMarket(root, { navigate }) {
     `
   }
 
+  function paintList(section, quotes) {
+    const bySymbol = new Map(quotes.map((q) => [q.symbol, q]))
+    listEl.innerHTML = section.items
+      .map((item) => {
+        const q = bySymbol.get(item.symbol)
+        const change = formatChange(q?.change, q?.changePercent)
+        return `
+          <article class="quote-row" data-symbol="${item.symbol}">
+            <div class="quote-main">
+              <div class="quote-title">
+                <strong>${item.name}</strong>
+                <span class="code">${item.symbol}</span>
+              </div>
+              <div class="quote-price ${changeClass(q?.change)}">
+                <span class="price">${formatPrice(q?.price)}</span>
+                <span class="chg">${change.text}</span>
+              </div>
+            </div>
+          </article>
+        `
+      })
+      .join('')
+  }
+
   async function load() {
+    softGen += 1
     const section = MARKET_SECTIONS.find((s) => s.id === activeId)
     if (!section) return
 
@@ -52,30 +81,55 @@ export async function renderMarket(root, { navigate }) {
     try {
       const symbols = section.items.map((i) => i.symbol)
       const quotes = await fetchQuotes(symbols)
-      const bySymbol = new Map(quotes.map((q) => [q.symbol, q]))
-
-      listEl.innerHTML = section.items
-        .map((item) => {
-          const q = bySymbol.get(item.symbol)
-          const change = formatChange(q?.change, q?.changePercent)
-          return `
-            <article class="quote-row" data-symbol="${item.symbol}">
-              <div class="quote-main">
-                <div class="quote-title">
-                  <strong>${item.name}</strong>
-                  <span class="code">${item.symbol}</span>
-                </div>
-                <div class="quote-price ${changeClass(q?.change)}">
-                  <span class="price">${formatPrice(q?.price)}</span>
-                  <span class="chg">${change.text}</span>
-                </div>
-              </div>
-            </article>
-          `
-        })
-        .join('')
+      if (disposed) return
+      paintList(section, quotes)
     } catch (err) {
+      if (disposed) return
       listEl.innerHTML = `<div class="state error">載入失敗：${err.message}</div>`
+    }
+  }
+
+  async function softRefresh() {
+    if (disposed || softRefreshing || document.hidden) return
+    softRefreshing = true
+    const gen = ++softGen
+    const sectionAtStart = activeId
+    const section = MARKET_SECTIONS.find((s) => s.id === activeId)
+    if (!section) {
+      softRefreshing = false
+      return
+    }
+
+    try {
+      const symbols = section.items.map((i) => i.symbol)
+      const quotes = await fetchQuotes(symbols)
+      if (disposed || gen !== softGen || activeId !== sectionAtStart) return
+      paintList(section, quotes)
+    } catch {
+      // 保留畫面上一次成功資料
+    } finally {
+      softRefreshing = false
+    }
+  }
+
+  function stopAutoRefresh() {
+    if (refreshTimer != null) {
+      clearInterval(refreshTimer)
+      refreshTimer = null
+    }
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh()
+    if (disposed || document.hidden) return
+    refreshTimer = setInterval(softRefresh, QUOTE_REFRESH_MS)
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) stopAutoRefresh()
+    else {
+      softRefresh()
+      startAutoRefresh()
     }
   }
 
@@ -103,5 +157,14 @@ export async function renderMarket(root, { navigate }) {
     if (row) navigate('stock', { symbol: row.dataset.symbol })
   })
 
+  document.addEventListener('visibilitychange', onVisibilityChange)
   await load()
+  startAutoRefresh()
+
+  return () => {
+    disposed = true
+    softGen += 1
+    stopAutoRefresh()
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+  }
 }
