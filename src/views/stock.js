@@ -151,6 +151,7 @@ export async function renderStock(root, { navigate, params }) {
       </div>
       <div class="chart-sub" id="chart-sub"></div>
     </div>
+    <div class="editor-backdrop" id="editor-backdrop" hidden></div>
   `
 
   const quotePanel = root.querySelector('#quote-panel')
@@ -173,6 +174,34 @@ export async function renderStock(root, { navigate, params }) {
   const watchBtn = root.querySelector('[data-action="watch"]')
   const watchMenu = root.querySelector('#watch-menu')
   const watchMenuList = root.querySelector('#watch-menu-list')
+  const editorBackdrop = root.querySelector('#editor-backdrop')
+
+  let longPressTimer = null
+  let longPressTriggered = false
+  let longPressStart = null
+  let editorOpenedAt = 0
+  let editorCentered = false
+  const LONG_PRESS_MS = 500
+  const LONG_PRESS_MOVE_PX = 10
+
+  function clearLongPress() {
+    if (longPressTimer != null) {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+    }
+    longPressStart = null
+  }
+
+  function showEditorBackdrop() {
+    editorBackdrop.hidden = false
+    editorOpenedAt = Date.now()
+    editorCentered = true
+  }
+
+  function hideEditorBackdrop() {
+    editorBackdrop.hidden = true
+    editorCentered = false
+  }
 
   function syncWatchBtn() {
     const inAny = isInAnyWatchlist(symbol)
@@ -291,7 +320,7 @@ export async function renderStock(root, { navigate, params }) {
     maLegend.innerHTML = maLines
       .map((line, i) => {
         const text = formatPrice(lastMaValues?.[i])
-        return `<span class="ma-tag" data-ma-index="${i}" style="color:${line.color}" title="雙擊可編輯天數與顏色">${line.period}MA ${text}</span>`
+        return `<span class="ma-tag" data-ma-index="${i}" style="color:${line.color}" title="雙擊或長按可編輯天數與顏色">${line.period}MA ${text}</span>`
       })
       .join('')
   }
@@ -302,7 +331,7 @@ export async function renderStock(root, { navigate, params }) {
     })
   }
 
-  function openMaEditor(index) {
+  function openMaEditor(index, { center = false } = {}) {
     closeSubColorEditor()
     editingMaIndex = index
     const line = maLines[index]
@@ -310,14 +339,22 @@ export async function renderStock(root, { navigate, params }) {
     maPeriodInput.value = String(line.period)
     editingMaColor = line.color
     syncMaSwatches()
+    maEditor.classList.toggle('ma-editor--center', center)
     maEditor.hidden = false
-    maPeriodInput.focus()
-    maPeriodInput.select()
+    if (center) {
+      showEditorBackdrop()
+    } else {
+      hideEditorBackdrop()
+      maPeriodInput.focus()
+      maPeriodInput.select()
+    }
   }
 
   function closeMaEditor() {
     editingMaIndex = null
     maEditor.hidden = true
+    maEditor.classList.remove('ma-editor--center')
+    if (subColorEditor.hidden) hideEditorBackdrop()
   }
 
   function applyMaEditor() {
@@ -344,7 +381,7 @@ export async function renderStock(root, { navigate, params }) {
     })
   }
 
-  function openSubColorEditor(key) {
+  function openSubColorEditor(key, { center = false } = {}) {
     if (!SUB_COLOR_TITLES[key]) return
     closeMaEditor()
     editingSubKey = key
@@ -352,12 +389,17 @@ export async function renderStock(root, { navigate, params }) {
       key === 'k' || key === 'd' ? kdColors[key] : macdColors[key]
     subColorEditorTitle.textContent = `編輯 ${SUB_COLOR_TITLES[key]} 顏色`
     syncSubColorSwatches()
+    subColorEditor.classList.toggle('ma-editor--center', center)
     subColorEditor.hidden = false
+    if (center) showEditorBackdrop()
+    else hideEditorBackdrop()
   }
 
   function closeSubColorEditor() {
     editingSubKey = null
     subColorEditor.hidden = true
+    subColorEditor.classList.remove('ma-editor--center')
+    if (maEditor.hidden) hideEditorBackdrop()
   }
 
   function applySubColorEditor() {
@@ -393,16 +435,16 @@ export async function renderStock(root, { navigate, params }) {
     if (lastSubValues.type === 'macd') {
       const histCls = lastSubValues.hist > 0 ? 'up' : lastSubValues.hist < 0 ? 'down' : ''
       subLegend.innerHTML = `
-        <span class="sub-tag sub-color-tag" data-sub-color="dif" style="color:${macdColors.dif}" title="雙擊可編輯顏色">DIF ${formatIndicator(lastSubValues.dif)}</span>
-        <span class="sub-tag sub-color-tag" data-sub-color="dea" style="color:${macdColors.dea}" title="雙擊可編輯顏色">DEA ${formatIndicator(lastSubValues.dea)}</span>
+        <span class="sub-tag sub-color-tag" data-sub-color="dif" style="color:${macdColors.dif}" title="雙擊或長按可編輯顏色">DIF ${formatIndicator(lastSubValues.dif)}</span>
+        <span class="sub-tag sub-color-tag" data-sub-color="dea" style="color:${macdColors.dea}" title="雙擊或長按可編輯顏色">DEA ${formatIndicator(lastSubValues.dea)}</span>
         <span class="sub-tag ${histCls}">MACD ${formatIndicator(lastSubValues.hist)}</span>
       `
       return
     }
     const kdN = KD_DEFAULTS.period
     subLegend.innerHTML = `
-      <span class="sub-tag sub-color-tag" data-sub-color="k" style="color:${kdColors.k}" title="雙擊可編輯顏色">K(${kdN}) ${formatIndicator(lastSubValues.k)}</span>
-      <span class="sub-tag sub-color-tag" data-sub-color="d" style="color:${kdColors.d}" title="雙擊可編輯顏色">D(${kdN}) ${formatIndicator(lastSubValues.d)}</span>
+      <span class="sub-tag sub-color-tag" data-sub-color="k" style="color:${kdColors.k}" title="雙擊或長按可編輯顏色">K(${kdN}) ${formatIndicator(lastSubValues.k)}</span>
+      <span class="sub-tag sub-color-tag" data-sub-color="d" style="color:${kdColors.d}" title="雙擊或長按可編輯顏色">D(${kdN}) ${formatIndicator(lastSubValues.d)}</span>
     `
   }
 
@@ -613,6 +655,95 @@ export async function renderStock(root, { navigate, params }) {
     openSubColorEditor(tag.dataset.subColor)
   })
 
+  function bindLongPress(el, resolveOpen) {
+    el.addEventListener(
+      'touchstart',
+      (e) => {
+        const target = resolveOpen(e.target)
+        if (!target) return
+        const touch = e.touches[0]
+        if (!touch) return
+        clearLongPress()
+        longPressTriggered = false
+        longPressStart = {
+          x: touch.clientX,
+          y: touch.clientY,
+          open: target.open,
+        }
+        longPressTimer = setTimeout(() => {
+          if (!longPressStart) return
+          longPressTriggered = true
+          longPressStart.open()
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try {
+              navigator.vibrate(25)
+            } catch {
+              /* ignore */
+            }
+          }
+        }, LONG_PRESS_MS)
+      },
+      { passive: true },
+    )
+
+    el.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!longPressStart || longPressTimer == null) return
+        const touch = e.touches[0]
+        if (!touch) return
+        const dx = touch.clientX - longPressStart.x
+        const dy = touch.clientY - longPressStart.y
+        if (dx * dx + dy * dy > LONG_PRESS_MOVE_PX * LONG_PRESS_MOVE_PX) {
+          clearLongPress()
+        }
+      },
+      { passive: true },
+    )
+
+    el.addEventListener(
+      'touchend',
+      (e) => {
+        clearLongPress()
+        if (longPressTriggered) {
+          e.preventDefault()
+          setTimeout(() => {
+            longPressTriggered = false
+          }, 0)
+        }
+      },
+      { passive: false },
+    )
+
+    el.addEventListener('touchcancel', () => {
+      clearLongPress()
+      if (longPressTriggered) {
+        setTimeout(() => {
+          longPressTriggered = false
+        }, 0)
+      }
+    })
+  }
+
+  bindLongPress(maLegend, (target) => {
+    if (maLegendWrap.hidden) return null
+    const tag = target.closest('[data-ma-index]')
+    if (!tag || !maLegend.contains(tag)) return null
+    const index = Number(tag.dataset.maIndex)
+    return {
+      open: () => openMaEditor(index, { center: true }),
+    }
+  })
+
+  bindLongPress(subLegend, (target) => {
+    const tag = target.closest('[data-sub-color]')
+    if (!tag || !subLegend.contains(tag)) return null
+    const key = tag.dataset.subColor
+    return {
+      open: () => openSubColorEditor(key, { center: true }),
+    }
+  })
+
   maEditor.addEventListener('click', (e) => {
     e.stopPropagation()
     const swatch = e.target.closest('.ma-swatch')
@@ -647,10 +778,18 @@ export async function renderStock(root, { navigate, params }) {
     }
   })
 
+  editorBackdrop.addEventListener('click', () => {
+    if (Date.now() - editorOpenedAt < 400) return
+    closeMaEditor()
+    closeSubColorEditor()
+  })
+
   const onDocClick = (e) => {
+    if (longPressTriggered) return
     if (!watchMenu.hidden && !root.querySelector('.watch-wrap')?.contains(e.target)) {
       closeWatchMenu()
     }
+    if (editorCentered) return
     if (!maEditor.hidden && !maLegendWrap.contains(e.target)) {
       closeMaEditor()
     }
@@ -712,6 +851,7 @@ export async function renderStock(root, { navigate, params }) {
     disposed = true
     softGen += 1
     inflight += 1
+    clearLongPress()
     stopAutoRefresh()
     document.removeEventListener('visibilitychange', onVisibilityChange)
     destroyChart()

@@ -663,12 +663,26 @@ code {
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
   border-radius: 4px;
   padding: 1px 2px;
 }
 
 .ma-tag:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.editor-backdrop[hidden] {
+  display: none;
 }
 
 .ma-editor {
@@ -686,6 +700,30 @@ code {
 
 .ma-editor[hidden] {
   display: none;
+}
+
+.ma-editor--center {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  width: min(300px, calc(100vw - 48px));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.ma-editor--center .ma-editor-title {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.ma-editor--center .ma-editor-btn {
+  padding: 12px;
+  font-size: 15px;
 }
 
 .ma-editor-title {
@@ -1117,6 +1155,9 @@ code {
 .sub-color-tag {
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
   border-radius: 4px;
   padding: 1px 2px;
 }
@@ -1129,6 +1170,12 @@ code {
   top: auto;
   bottom: calc(100% + 4px);
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.kd-editor.ma-editor--center {
+  top: 50%;
+  bottom: auto;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
 }
 
 .chart-sub-head select {
