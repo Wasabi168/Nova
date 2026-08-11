@@ -35,6 +35,8 @@ body,
   background: var(--bg);
   -webkit-user-select: none;
   user-select: none;
+  /* 禁止雙指縮放 / 雙擊放大整個網頁，降低誤觸 */
+  touch-action: pan-x pan-y;
 }
 
 input,
@@ -1086,6 +1088,8 @@ code {
   flex: 1.7;
   min-height: 260px;
   position: relative;
+  /* 交給 Lightweight Charts 處理捏合縮放，不觸發瀏覽器整頁放大 */
+  touch-action: none;
 }
 
 .swing-range-label {
@@ -1116,6 +1120,7 @@ code {
   flex: 1;
   min-height: 140px;
   border-top: 1px solid var(--line);
+  touch-action: none;
 }
 
 .chart-sub-head {
