@@ -111,9 +111,12 @@ export async function renderWatchlist(root, { navigate }) {
         <div class="state">輸入關鍵字搜尋後加入目前群組</div>
       </div>
     </section>
+    <div class="ctx-backdrop" id="ctx-backdrop" hidden></div>
     <div class="ctx-menu" id="ctx-menu" hidden>
+      <p class="ctx-menu-title" id="ctx-menu-title" hidden></p>
       <button type="button" data-ctx="rename">重新命名</button>
       <button type="button" data-ctx="delete" class="danger">刪除群組</button>
+      <button type="button" data-ctx="cancel" class="ctx-menu-cancel" hidden>取消</button>
     </div>
   `
 
@@ -121,6 +124,9 @@ export async function renderWatchlist(root, { navigate }) {
   const sortBarEl = root.querySelector('#sort-bar')
   const listEl = root.querySelector('#watch-list')
   const menuEl = root.querySelector('#ctx-menu')
+  const menuTitleEl = root.querySelector('#ctx-menu-title')
+  const menuCancelEl = root.querySelector('[data-ctx="cancel"]')
+  const backdropEl = root.querySelector('#ctx-backdrop')
   const addPanel = root.querySelector('#add-panel')
   const addInput = root.querySelector('#add-q')
   const addResults = root.querySelector('#add-results')
@@ -138,6 +144,7 @@ export async function renderWatchlist(root, { navigate }) {
   let longPressTimer = null
   let longPressTriggered = false
   let longPressStart = null
+  let menuOpenedAt = 0
   const LONG_PRESS_MS = 500
   const LONG_PRESS_MOVE_PX = 10
   applyViewLayout(listEl, viewLayout)
@@ -152,11 +159,24 @@ export async function renderWatchlist(root, { navigate }) {
 
   function hideMenu() {
     menuEl.hidden = true
+    backdropEl.hidden = true
+    menuEl.classList.remove('ctx-menu--center')
+    menuTitleEl.hidden = true
+    menuCancelEl.hidden = true
+    menuTitleEl.textContent = ''
+    menuEl.style.left = ''
+    menuEl.style.top = ''
     ctxGroupId = null
   }
 
   function showMenu(x, y, groupId) {
     ctxGroupId = groupId
+    menuOpenedAt = Date.now()
+    menuEl.classList.remove('ctx-menu--center')
+    menuTitleEl.hidden = true
+    menuCancelEl.hidden = true
+    menuTitleEl.textContent = ''
+    backdropEl.hidden = true
     menuEl.hidden = false
     menuEl.style.left = '0px'
     menuEl.style.top = '0px'
@@ -166,6 +186,20 @@ export async function renderWatchlist(root, { navigate }) {
     const top = Math.min(y, window.innerHeight - rect.height - pad)
     menuEl.style.left = `${Math.max(pad, left)}px`
     menuEl.style.top = `${Math.max(pad, top)}px`
+  }
+
+  function showMenuCenter(groupId) {
+    const group = getGroups().find((g) => g.id === groupId)
+    ctxGroupId = groupId
+    menuOpenedAt = Date.now()
+    menuEl.classList.add('ctx-menu--center')
+    menuTitleEl.hidden = false
+    menuCancelEl.hidden = false
+    menuTitleEl.textContent = group?.name || '群組'
+    menuEl.style.left = ''
+    menuEl.style.top = ''
+    backdropEl.hidden = false
+    menuEl.hidden = false
   }
 
   function openAddPanel() {
@@ -533,7 +567,7 @@ export async function renderWatchlist(root, { navigate }) {
       longPressTimer = setTimeout(() => {
         if (!longPressStart) return
         longPressTriggered = true
-        showMenu(longPressStart.x, longPressStart.y, longPressStart.groupId)
+        showMenuCenter(longPressStart.groupId)
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
           try {
             navigator.vibrate(25)
@@ -587,16 +621,28 @@ export async function renderWatchlist(root, { navigate }) {
 
   menuEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-ctx]')
-    if (!btn || !ctxGroupId) return
+    if (!btn) return
     const action = btn.dataset.ctx
+    if (action === 'cancel') {
+      hideMenu()
+      return
+    }
+    if (!ctxGroupId) return
     const groupId = ctxGroupId
     hideMenu()
     if (action === 'rename') renameCtxGroup(groupId)
     if (action === 'delete') deleteCtxGroup(groupId)
   })
 
+  backdropEl.addEventListener('click', () => {
+    // 長按放開時可能誤觸遮罩，短暫忽略關閉
+    if (Date.now() - menuOpenedAt < 400) return
+    hideMenu()
+  })
+
   document.addEventListener('click', (e) => {
     if (longPressTriggered) return
+    if (menuEl.classList.contains('ctx-menu--center')) return
     if (!menuEl.hidden && !menuEl.contains(e.target)) hideMenu()
   })
 

@@ -285,6 +285,17 @@ code {
   gap: 8px;
 }
 
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ctx-backdrop[hidden] {
+  display: none;
+}
+
 .ctx-menu {
   position: fixed;
   z-index: 50;
@@ -303,6 +314,34 @@ code {
   display: none;
 }
 
+.ctx-menu--center {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(300px, calc(100vw - 48px));
+  min-width: 0;
+  padding: 12px;
+  gap: 4px;
+}
+
+.ctx-menu-title {
+  margin: 0 0 6px;
+  padding: 4px 12px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted, #9aa4b2);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-menu-title[hidden],
+.ctx-menu-cancel[hidden] {
+  display: none;
+}
+
 .ctx-menu button {
   border: 0;
   background: transparent;
@@ -313,12 +352,25 @@ code {
   font-size: 13px;
 }
 
+.ctx-menu--center button {
+  text-align: center;
+  padding: 14px 12px;
+  font-size: 15px;
+}
+
 .ctx-menu button:hover {
   background: rgba(255, 255, 255, 0.06);
 }
 
 .ctx-menu button.danger {
   color: #ffa198;
+}
+
+.ctx-menu-cancel {
+  margin-top: 4px;
+  border-top: 1px solid var(--line) !important;
+  border-radius: 0 0 8px 8px !important;
+  color: var(--muted, #9aa4b2);
 }
 
 .group-tabs {
