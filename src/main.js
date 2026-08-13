@@ -1,6 +1,7 @@
 import './style.css'
 import { renderWatchlist } from './views/watchlist.js'
 import { renderMarket } from './views/market.js'
+import { renderPortfolio } from './views/portfolio.js'
 import { renderSearch } from './views/search.js'
 import { renderSettings } from './views/settings.js'
 import { renderStock } from './views/stock.js'
@@ -8,6 +9,7 @@ import { renderStock } from './views/stock.js'
 const routes = {
   watchlist: renderWatchlist,
   market: renderMarket,
+  portfolio: renderPortfolio,
   search: renderSearch,
   settings: renderSettings,
   stock: renderStock,
@@ -39,6 +41,9 @@ function renderShell(activePath) {
         </button>
         <button data-nav="market" class="${activePath === 'market' ? 'active' : ''}">
           <span class="nav-ico">▦</span><span>行情</span>
+        </button>
+        <button data-nav="portfolio" class="${activePath === 'portfolio' ? 'active' : ''}">
+          <span class="nav-ico">▣</span><span>庫存</span>
         </button>
         <button data-nav="search" class="${activePath === 'search' ? 'active' : ''}">
           <span class="nav-ico">⌕</span><span>搜尋</span>

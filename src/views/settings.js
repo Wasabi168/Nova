@@ -15,8 +15,8 @@ export async function renderSettings(root) {
 
     <section class="card-block">
       <h2>自選與設定備份</h2>
-      <p class="muted">匯出後可在其他電腦匯入，恢復相同的自選群組/股票與頁面設定。</p>
-      <p class="muted">匯入會覆蓋目前的自選群組/股票與設定；搜尋/瀏覽紀錄不會被還原。</p>
+      <p class="muted">匯出後可在其他電腦匯入，恢復相同的自選群組/股票、庫存持股與頁面設定。</p>
+      <p class="muted">匯入會覆蓋目前的自選群組/股票、庫存持股與設定；搜尋/瀏覽紀錄不會被還原。</p>
       <button class="primary-btn" data-action="export-backup" type="button">匯出設定</button>
       <button class="primary-btn" data-action="import-backup" type="button">匯入設定</button>
       <input id="backup-file" type="file" accept="application/json" hidden />

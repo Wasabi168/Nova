@@ -1,5 +1,6 @@
 import { getGroups, getActiveGroupId, replaceWatchlistStore } from './watchlist.js'
 import { getSettings, replaceSettings } from './market.js'
+import { getHoldings, replacePortfolioStore } from './portfolio.js'
 
 export const BACKUP_APP = 'nova-chart'
 export const BACKUP_SCHEMA_VERSION = 1
@@ -20,6 +21,16 @@ export function createBackupPayload() {
         symbols: Array.isArray(g.symbols) ? [...g.symbols] : [],
       })),
       activeGroupId: getActiveGroupId(),
+    },
+    portfolio: {
+      holdings: getHoldings().map((h) => ({
+        id: h.id,
+        symbol: h.symbol,
+        type: h.type,
+        shares: h.shares,
+        costPrice: h.costPrice,
+        createdAt: h.createdAt,
+      })),
     },
     settings: getSettings(),
   }
@@ -46,10 +57,12 @@ export function importBackupPayload(payload) {
   }
 
   const settings = isObjectLike(payload.settings) ? payload.settings : {}
+  const portfolio = isObjectLike(payload.portfolio) ? payload.portfolio : { holdings: [] }
 
   // 設定先寫入，避免匯入期間 UI 若觸發報價時用到舊 proxy
   replaceSettings(settings)
   replaceWatchlistStore({ groups: watchlist.groups, activeGroupId: watchlist.activeGroupId })
+  replacePortfolioStore(portfolio)
   return true
 }
 
