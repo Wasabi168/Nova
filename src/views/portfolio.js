@@ -39,6 +39,24 @@ let chartCache = null
 const CHART_CACHE_MS = 10 * 60 * 1000
 const CHART_FETCH_CONCURRENCY = 2
 const CHART_RANGE = '1y'
+const PL_RANGE_KEY = 'nova.portfolio.plRange'
+const PL_RANGE_OPTS = [
+  { months: 3, label: '3個月' },
+  { months: 2, label: '2個月' },
+  { months: 1, label: '1個月' },
+]
+
+function getPlRangeMonths() {
+  const n = Number(localStorage.getItem(PL_RANGE_KEY))
+  return PL_RANGE_OPTS.some((o) => o.months === n) ? n : 3
+}
+
+function setPlRangeMonths(months) {
+  const n = Number(months)
+  const next = PL_RANGE_OPTS.some((o) => o.months === n) ? n : 3
+  localStorage.setItem(PL_RANGE_KEY, String(next))
+  return next
+}
 
 function getSortState() {
   try {
@@ -279,15 +297,16 @@ function sortRows(rows, col, dir) {
  * 以持股數量 × 日漲跌估算每日損益（假設期間庫存不變）
  * @param {import('../data/portfolio.js').Holding[]} holdings
  * @param {Map<string, any[]>} candlesBySymbol
+ * @param {number} months
  */
-function buildDailyPL(holdings, candlesBySymbol) {
+function buildDailyPL(holdings, candlesBySymbol, months = 3) {
   /** @type {Map<string, number>} */
   const byDate = new Map()
   /** @type {string[]} */
   const dateOrder = []
 
   for (const h of holdings) {
-    const candles = filterCandlesLastMonths(candlesBySymbol.get(h.symbol) || [], 3)
+    const candles = filterCandlesLastMonths(candlesBySymbol.get(h.symbol) || [], months)
     for (let i = 1; i < candles.length; i++) {
       const prev = candles[i - 1]?.close
       const cur = candles[i]?.close
@@ -325,6 +344,7 @@ export async function renderPortfolio(root, { navigate }) {
     <section class="pf-chart-card" id="pf-chart-card">
       <div class="pf-chart-head">
         <span>每日損益 (元)</span>
+        <div class="pf-range-tabs" id="pf-range-tabs" role="group" aria-label="每日損益區間"></div>
       </div>
       <div class="pf-chart" id="pf-chart">
         <div class="state">載入中…</div>
@@ -392,6 +412,7 @@ export async function renderPortfolio(root, { navigate }) {
 
   const summaryEl = root.querySelector('#pf-summary')
   const chartEl = root.querySelector('#pf-chart')
+  const rangeTabsEl = root.querySelector('#pf-range-tabs')
   const headEl = root.querySelector('#pf-table-head')
   const bodyEl = root.querySelector('#pf-table-body')
   const addPanel = root.querySelector('#add-panel')
@@ -410,6 +431,7 @@ export async function renderPortfolio(root, { navigate }) {
   const backdropEl = root.querySelector('#ctx-backdrop')
 
   let { col: sortCol, dir: sortDir } = getSortState()
+  let plMonths = getPlRangeMonths()
   let cachedRows = []
   let disposed = false
   let softGen = 0
@@ -423,6 +445,43 @@ export async function renderPortfolio(root, { navigate }) {
   let longPressStart = null
   const LONG_PRESS_MS = 500
   const LONG_PRESS_MOVE_PX = 10
+
+  function renderRangeTabs() {
+    if (!rangeTabsEl) return
+    rangeTabsEl.innerHTML = PL_RANGE_OPTS.map(
+      (o) => `
+        <button type="button" class="chip pf-range-chip ${o.months === plMonths ? 'active' : ''}" data-pl-months="${o.months}">
+          ${o.label}
+        </button>
+      `,
+    ).join('')
+  }
+
+  function candlesMapFromCache(symbols) {
+    const map = new Map()
+    for (const symbol of symbols) {
+      map.set(symbol, candleCache.get(symbol) || [])
+    }
+    return map
+  }
+
+  function paintChartFromCache(holdings) {
+    const symbols = [...new Set(holdings.map((h) => h.symbol))]
+    const hasAny = symbols.some((s) => (candleCache.get(s) || []).length > 1)
+    if (!hasAny) {
+      renderChart([])
+      return false
+    }
+    const points = buildDailyPL(holdings, candlesMapFromCache(symbols), plMonths)
+    chartCache = {
+      key: chartCacheKey(holdings),
+      points,
+      months: plMonths,
+      at: Date.now(),
+    }
+    renderChart(points)
+    return true
+  }
 
   function hideMenu() {
     menuEl.hidden = true
@@ -694,6 +753,7 @@ export async function renderPortfolio(root, { navigate }) {
   }
 
   async function loadDailyChart(holdings, { force = false } = {}) {
+    renderRangeTabs()
     if (!holdings.length) {
       chartCache = null
       renderChart([])
@@ -701,24 +761,25 @@ export async function renderPortfolio(root, { navigate }) {
     }
 
     const key = chartCacheKey(holdings)
-    const fresh =
+    const symbols = [...new Set(holdings.map((h) => h.symbol))]
+    const cacheReady =
       chartCache &&
       chartCache.key === key &&
-      Date.now() - chartCache.at < CHART_CACHE_MS
+      Date.now() - chartCache.at < CHART_CACHE_MS &&
+      symbols.every((s) => candleCache.has(s))
 
-    if (fresh && !force) {
-      renderChart(chartCache.points)
+    if (cacheReady && !force) {
+      paintChartFromCache(holdings)
       paint(rowsFromHoldings(holdings))
       return
     }
 
-    if (chartCache?.key === key) {
-      renderChart(chartCache.points)
-    } else {
+    if (cacheReady) {
+      paintChartFromCache(holdings)
+    } else if (!paintChartFromCache(holdings)) {
       chartEl.innerHTML = `<div class="state">圖表載入中…</div>`
     }
 
-    const symbols = [...new Set(holdings.map((h) => h.symbol))]
     const candlesBySymbol = new Map()
     await mapPool(symbols, CHART_FETCH_CONCURRENCY, async (symbol) => {
       try {
@@ -731,8 +792,8 @@ export async function renderPortfolio(root, { navigate }) {
       }
     })
     if (disposed) return
-    const points = buildDailyPL(holdings, candlesBySymbol)
-    chartCache = { key, points, at: Date.now() }
+    const points = buildDailyPL(holdings, candlesBySymbol, plMonths)
+    chartCache = { key, points, months: plMonths, at: Date.now() }
     renderChart(points)
     paint(rowsFromHoldings(getHoldings()))
   }
@@ -760,6 +821,7 @@ export async function renderPortfolio(root, { navigate }) {
   async function load({ forceChart = false } = {}) {
     const gen = ++softGen
     const holdings = getHoldings()
+    renderRangeTabs()
     if (!holdings.length) {
       cachedRows = []
       paint([])
@@ -842,6 +904,23 @@ export async function renderPortfolio(root, { navigate }) {
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', () =>
     load({ forceChart: true }),
   )
+
+  rangeTabsEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-pl-months]')
+    if (!btn) return
+    const next = Number(btn.getAttribute('data-pl-months'))
+    if (!PL_RANGE_OPTS.some((o) => o.months === next) || next === plMonths) return
+    plMonths = setPlRangeMonths(next)
+    renderRangeTabs()
+    const holdings = getHoldings()
+    if (!holdings.length) {
+      renderChart([])
+      return
+    }
+    if (!paintChartFromCache(holdings)) {
+      loadDailyChart(holdings, { force: true })
+    }
+  })
 
   toggleAddBtn?.addEventListener('click', () => {
     if (addPanel.hidden) openAddPanel()
