@@ -1,6 +1,7 @@
 import { getGroups, getActiveGroupId, replaceWatchlistStore } from './watchlist.js'
 import { getSettings, replaceSettings } from './market.js'
 import { getHoldings, replacePortfolioStore } from './portfolio.js'
+import { getAssetStore, replaceAssetStore } from './assets.js'
 
 export const BACKUP_APP = 'nova-chart'
 export const BACKUP_SCHEMA_VERSION = 1
@@ -32,6 +33,7 @@ export function createBackupPayload() {
         createdAt: h.createdAt,
       })),
     },
+    assets: getAssetStore(),
     settings: getSettings(),
   }
 }
@@ -63,6 +65,7 @@ export function importBackupPayload(payload) {
   replaceSettings(settings)
   replaceWatchlistStore({ groups: watchlist.groups, activeGroupId: watchlist.activeGroupId })
   replacePortfolioStore(portfolio)
+  if (payload.assets) replaceAssetStore(payload.assets)
   return true
 }
 

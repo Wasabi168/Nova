@@ -11,10 +11,16 @@ import {
   removeHolding,
 } from '../data/portfolio.js'
 import { getSymbolMeta, normalizeSymbol, searchLocal } from '../data/symbols.js'
+import { isTaiwanSymbol } from '../data/twse.js'
 import { formatPrice, changeClass } from '../utils/format.js'
 import { pushSearchHistory } from '../data/watchlist.js'
+import { renderAllocation } from './allocation.js'
+import { getAssetStore, getAssetTab, setAssetTab, setUsdTwdRate } from '../data/assets.js'
+
+const FX_SYMBOLS = ['TWD=X', 'USDTWD=X']
 
 const SORT_KEY = 'nova.portfolio.sort'
+const CURRENCY_KEY = 'nova.portfolio.currency'
 const TYPE_LABEL = { spot: '現股', margin: '融資' }
 
 const SORT_COLS = [
@@ -24,7 +30,7 @@ const SORT_COLS = [
   { id: 'totalPL', label: '總損益', align: 'right' },
   { id: 'shares', label: '股數', align: 'right' },
   { id: 'cost', label: '均價 / 總成本', align: 'right' },
-  { id: 'weight', label: '市值佔比', align: 'right' },
+  { id: 'weight', label: '市值 / 佔比', align: 'right' },
   { id: 'ret5', label: '近5日漲幅', align: 'right' },
   { id: 'ret20', label: '近20日漲幅', align: 'right' },
   { id: 'retYtd', label: '今年以來漲幅', align: 'right' },
@@ -45,6 +51,17 @@ const PL_RANGE_OPTS = [
   { months: 2, label: '2個月' },
   { months: 1, label: '1個月' },
 ]
+
+function getDisplayCurrency() {
+  const raw = localStorage.getItem(CURRENCY_KEY)
+  return raw === 'USD' ? 'USD' : 'TWD'
+}
+
+function setDisplayCurrency(next) {
+  const value = next === 'USD' ? 'USD' : 'TWD'
+  localStorage.setItem(CURRENCY_KEY, value)
+  return value
+}
 
 function getPlRangeMonths() {
   const n = Number(localStorage.getItem(PL_RANGE_KEY))
@@ -331,11 +348,24 @@ export async function renderPortfolio(root, { navigate }) {
     <header class="page-header">
       <div>
         <p class="eyebrow">Nova</p>
-        <h1>庫存</h1>
+        <h1>資產</h1>
       </div>
-      <button class="icon-btn" data-action="refresh" title="重新整理" aria-label="重新整理">↻</button>
+      <div class="pf-header-actions" id="pf-header-actions">
+        <div class="pf-fx-toggle" id="pf-fx-toggle" role="group" aria-label="計價幣別">
+          <button type="button" class="chip pf-fx-chip" data-fx="TWD">TWD</button>
+          <button type="button" class="chip pf-fx-chip" data-fx="USD">USD</button>
+        </div>
+        <button class="icon-btn" data-action="refresh" title="重新整理" aria-label="重新整理">↻</button>
+      </div>
     </header>
-    <div class="hint-bar">點列進入個股 · 長按編輯／刪除 · 表格可左右滑動</div>
+    <div class="asset-tabs" id="asset-tabs" role="tablist" aria-label="資產分頁">
+      <button type="button" class="chip asset-tab" data-asset-tab="tw" role="tab">台股庫存</button>
+      <button type="button" class="chip asset-tab" data-asset-tab="us" role="tab">美股庫存</button>
+      <button type="button" class="chip asset-tab" data-asset-tab="alloc" role="tab">資產配置</button>
+    </div>
+
+    <div id="pf-hold-view">
+    <div class="hint-bar" id="pf-hint">點列進入個股 · 長按編輯／刪除 · 表格可左右滑動</div>
 
     <section class="pf-summary" id="pf-summary">
       <div class="state">載入中…</div>
@@ -343,7 +373,7 @@ export async function renderPortfolio(root, { navigate }) {
 
     <section class="pf-chart-card" id="pf-chart-card">
       <div class="pf-chart-head">
-        <span>每日損益 (元)</span>
+        <span>每日損益 (<span id="pf-chart-unit">TWD</span>)</span>
         <div class="pf-range-tabs" id="pf-range-tabs" role="group" aria-label="每日損益區間"></div>
       </div>
       <div class="pf-chart" id="pf-chart">
@@ -408,6 +438,8 @@ export async function renderPortfolio(root, { navigate }) {
       <button type="button" data-ctx="open">查看個股</button>
       <button type="button" data-ctx="cancel" class="ctx-menu-cancel">取消</button>
     </div>
+    </div>
+    <div id="pf-alloc-view" hidden></div>
   `
 
   const summaryEl = root.querySelector('#pf-summary')
@@ -429,7 +461,16 @@ export async function renderPortfolio(root, { navigate }) {
   const menuEl = root.querySelector('#ctx-menu')
   const menuTitleEl = root.querySelector('#ctx-menu-title')
   const backdropEl = root.querySelector('#ctx-backdrop')
+  const holdView = root.querySelector('#pf-hold-view')
+  const allocView = root.querySelector('#pf-alloc-view')
+  const tabsEl = root.querySelector('#asset-tabs')
+  const fxToggle = root.querySelector('#pf-fx-toggle')
+  const headerActions = root.querySelector('#pf-header-actions')
+  const hintEl = root.querySelector('#pf-hint')
 
+  let assetTab = getAssetTab()
+  let holdMarket = assetTab === 'us' ? 'us' : 'tw'
+  let allocCleanup = null
   let { col: sortCol, dir: sortDir } = getSortState()
   let plMonths = getPlRangeMonths()
   let cachedRows = []
@@ -443,8 +484,111 @@ export async function renderPortfolio(root, { navigate }) {
   let longPressTimer = null
   let longPressTriggered = false
   let longPressStart = null
+  let usdTwd = getAssetStore().liquid.usdTwdRate
+  let displayCurrency = getDisplayCurrency()
   const LONG_PRESS_MS = 500
   const LONG_PRESS_MOVE_PX = 10
+
+  function applyFxQuote(quote) {
+    if (!quote || !FX_SYMBOLS.includes(quote.symbol) || !(quote.price > 0)) return
+    const rate = quote.price < 1 ? 1 / quote.price : quote.price
+    if (rate > 1) {
+      usdTwd = rate
+      setUsdTwdRate(rate)
+    }
+  }
+
+  function nativeCurrency() {
+    return holdMarket === 'us' ? 'USD' : 'TWD'
+  }
+
+  function convertMoney(amount) {
+    if (amount == null || !Number.isFinite(amount)) return null
+    const from = nativeCurrency()
+    if (from === displayCurrency) return amount
+    if (usdTwd == null || !(usdTwd > 0)) return null
+    return from === 'USD' ? amount * usdTwd : amount / usdTwd
+  }
+
+  function paintFxToggle() {
+    fxToggle?.querySelectorAll('[data-fx]').forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-fx') === displayCurrency)
+    })
+    const unit = root.querySelector('#pf-chart-unit')
+    if (unit) unit.textContent = displayCurrency
+  }
+
+  function marketLabel() {
+    return holdMarket === 'us' ? '美股' : '台股'
+  }
+
+  function searchIdleText() {
+    return `輸入關鍵字搜尋後加入${marketLabel()}庫存`
+  }
+
+  function getVisibleHoldings() {
+    return getHoldings().filter((h) =>
+      holdMarket === 'tw' ? isTaiwanSymbol(h.symbol) : !isTaiwanSymbol(h.symbol),
+    )
+  }
+
+  function isTwSearchItem(item) {
+    const symbol = normalizeSymbol(item.symbol) || item.symbol
+    return isTaiwanSymbol(symbol) || item.market === 'TW'
+  }
+
+  function matchesHoldMarket(item) {
+    return holdMarket === 'tw' ? isTwSearchItem(item) : !isTwSearchItem(item)
+  }
+
+  function syncHoldCopy() {
+    if (addInput) {
+      addInput.placeholder =
+        holdMarket === 'us' ? '搜尋美股代號或名稱，例如 AAPL' : '搜尋台股代號或名稱，例如 2330'
+    }
+    if (hintEl) {
+      hintEl.textContent = `點列進入個股 · 長按編輯／刪除 · 表格可左右滑動 · 目前為${marketLabel()}庫存`
+    }
+  }
+
+  function paintTabs() {
+    tabsEl?.querySelectorAll('[data-asset-tab]').forEach((btn) => {
+      const on = btn.getAttribute('data-asset-tab') === assetTab
+      btn.classList.toggle('active', on)
+      btn.setAttribute('aria-selected', on ? 'true' : 'false')
+    })
+  }
+
+  async function showAssetTab(tab) {
+    const next = tab === 'us' || tab === 'alloc' || tab === 'tw' ? tab : 'tw'
+    assetTab = setAssetTab(next)
+    paintTabs()
+    if (next === 'alloc') {
+      holdView.hidden = true
+      if (headerActions) headerActions.hidden = true
+      allocView.hidden = false
+      if (typeof allocCleanup === 'function') allocCleanup()
+      allocCleanup = await renderAllocation(allocView, {
+        onOpenMarket: (market) => {
+          showAssetTab(market)
+        },
+      })
+      return
+    }
+    if (typeof allocCleanup === 'function') {
+      allocCleanup()
+      allocCleanup = null
+    }
+    holdMarket = next
+    holdView.hidden = false
+    if (headerActions) headerActions.hidden = false
+    paintFxToggle()
+    allocView.hidden = true
+    allocView.innerHTML = ''
+    syncHoldCopy()
+    closeAddPanel()
+    await load()
+  }
 
   function renderRangeTabs() {
     if (!rangeTabsEl) return
@@ -517,7 +661,7 @@ export async function renderPortfolio(root, { navigate }) {
     toggleAddBtn.classList.remove('open')
     addInput.value = ''
     resetForm()
-    addResults.innerHTML = `<div class="state">輸入關鍵字搜尋後加入庫存</div>`
+    addResults.innerHTML = `<div class="state">${searchIdleText()}</div>`
   }
 
   function resetForm() {
@@ -549,7 +693,7 @@ export async function renderPortfolio(root, { navigate }) {
     summaryEl.innerHTML = `
       <div class="pf-stat">
         <div class="pf-stat-label">今日損益</div>
-        <div class="pf-stat-value ${todayCls}">${formatSigned(summary.todayPL, { digits: 0 })}</div>
+        <div class="pf-stat-value ${todayCls}">${formatSigned(convertMoney(summary.todayPL), { digits: 0 })}</div>
         <div class="pf-stat-sub ${todayCls}">${formatPct(summary.todayPLPercent)}</div>
       </div>
       <div class="pf-stat">
@@ -557,7 +701,7 @@ export async function renderPortfolio(root, { navigate }) {
           <span class="pf-stat-ico pie" aria-hidden="true"></span>
           累積損益
         </div>
-        <div class="pf-stat-value ${totalCls}">${formatSigned(summary.totalPL, { digits: 0 })}</div>
+        <div class="pf-stat-value ${totalCls}">${formatSigned(convertMoney(summary.totalPL), { digits: 0 })}</div>
         <div class="pf-stat-sub ${totalCls}">${formatPct(summary.totalPLPercent)}</div>
       </div>
       <div class="pf-stat">
@@ -565,8 +709,8 @@ export async function renderPortfolio(root, { navigate }) {
           <span class="pf-stat-ico pie" aria-hidden="true"></span>
           股票市值
         </div>
-        <div class="pf-stat-value">${formatSigned(summary.marketValue, { digits: 0, withSign: false })}</div>
-        <div class="pf-stat-sub muted">成本 ${formatSigned(summary.totalCost, { digits: 0, withSign: false })}</div>
+        <div class="pf-stat-value">${formatSigned(convertMoney(summary.marketValue), { digits: 0, withSign: false })}</div>
+        <div class="pf-stat-sub muted">成本 ${formatSigned(convertMoney(summary.totalCost), { digits: 0, withSign: false })}</div>
       </div>
     `
   }
@@ -578,20 +722,24 @@ export async function renderPortfolio(root, { navigate }) {
       return
     }
 
-    const values = points.map((p) => p.value)
+    const shown = points.map((p) => ({
+      date: p.date,
+      value: convertMoney(p.value) ?? p.value,
+    }))
+    const values = shown.map((p) => p.value)
     const maxAbs = Math.max(...values.map((v) => Math.abs(v)), 1)
     const top = maxAbs
     const bottom = -maxAbs
     const w = 100
     const h = 100
     const padY = 8
-    const barW = Math.max(0.8, (w / points.length) * 0.55)
+    const barW = Math.max(0.8, (w / shown.length) * 0.55)
     const zeroY = h / 2
     const scale = (h / 2 - padY) / maxAbs
 
-    const bars = points
+    const bars = shown
       .map((p, i) => {
-        const x = ((i + 0.5) / points.length) * w - barW / 2
+        const x = ((i + 0.5) / shown.length) * w - barW / 2
         const bh = Math.max(0.4, Math.abs(p.value) * scale)
         const y = p.value >= 0 ? zeroY - bh : zeroY
         const cls = p.value >= 0 ? 'up' : 'down'
@@ -601,8 +749,8 @@ export async function renderPortfolio(root, { navigate }) {
 
     const topY = padY
     const bottomY = h - padY
-    const firstLabel = formatChartDate(points[0].date)
-    const lastLabel = formatChartDate(points[points.length - 1].date)
+    const firstLabel = formatChartDate(shown[0].date)
+    const lastLabel = formatChartDate(shown[shown.length - 1].date)
 
     chartEl.innerHTML = `
       <div class="pf-chart-y">
@@ -628,11 +776,11 @@ export async function renderPortfolio(root, { navigate }) {
     chartEl.querySelectorAll('.pf-bar').forEach((bar) => {
       bar.addEventListener('pointerenter', () => {
         const i = Number(bar.getAttribute('data-i'))
-        const p = chartPoints[i]
+        const p = shown[i]
         if (!p || !tip) return
         tip.hidden = false
         tip.textContent = `${formatChartTipDate(p.date)}　${formatSigned(p.value, { digits: 0 })}`
-        tip.style.left = `${((i + 0.5) / chartPoints.length) * 100}%`
+        tip.style.left = `${((i + 0.5) / shown.length) * 100}%`
       })
       bar.addEventListener('pointerleave', () => {
         if (tip) tip.hidden = true
@@ -655,7 +803,7 @@ export async function renderPortfolio(root, { navigate }) {
 
   function renderBody(rows) {
     if (!rows.length) {
-      bodyEl.innerHTML = `<div class="state pf-empty">尚未建立庫存<br/>點下方「新增庫存」加入持股</div>`
+      bodyEl.innerHTML = `<div class="state pf-empty">尚未建立${marketLabel()}庫存<br/>點下方「新增庫存」加入持股</div>`
       return
     }
 
@@ -676,25 +824,26 @@ export async function renderPortfolio(root, { navigate }) {
               <span class="code">${displayCode(r.symbol)}</span>
             </div>
             <div class="pf-cell pf-cell-num ${todayCls}">
-              ${formatSigned(r.todayPL, { digits: 0 })}
+              ${formatSigned(convertMoney(r.todayPL), { digits: 0 })}
             </div>
             <div class="pf-cell pf-cell-stack ${chgCls}">
-              <span class="price">${formatPrice(r.price)}</span>
+              <span class="price">${formatPrice(convertMoney(r.price))}</span>
               <span class="chg">${formatPct(r.changePercent)}</span>
             </div>
             <div class="pf-cell pf-cell-stack ${totalCls}">
-              <span class="price">${formatSigned(r.totalPL, { digits: 0 })}</span>
+              <span class="price">${formatSigned(convertMoney(r.totalPL), { digits: 0 })}</span>
               <span class="chg">${formatPct(r.totalPLPercent)}</span>
             </div>
             <div class="pf-cell pf-cell-num">
               ${formatSigned(r.shares, { digits: 0, withSign: false })}
             </div>
             <div class="pf-cell pf-cell-stack">
-              <span class="price">${formatPrice(r.costPrice)}</span>
-              <span class="chg muted">${formatSigned(r.cost, { digits: 0, withSign: false })}</span>
+              <span class="price">${formatPrice(convertMoney(r.costPrice))}</span>
+              <span class="chg muted">${formatSigned(convertMoney(r.cost), { digits: 0, withSign: false })}</span>
             </div>
-            <div class="pf-cell pf-cell-num">
-              ${r.weight != null && Number.isFinite(r.weight) ? `${r.weight.toFixed(2)}%` : '—'}
+            <div class="pf-cell pf-cell-stack">
+              <span class="price">${formatSigned(convertMoney(r.marketValue), { digits: 0, withSign: false })}</span>
+              <span class="chg muted">${r.weight != null && Number.isFinite(r.weight) ? `${r.weight.toFixed(2)}%` : '—'}</span>
             </div>
             <div class="pf-cell pf-cell-num ${ret5Cls}">${formatPct(r.ret5)}</div>
             <div class="pf-cell pf-cell-num ${ret20Cls}">${formatPct(r.ret20)}</div>
@@ -795,18 +944,20 @@ export async function renderPortfolio(root, { navigate }) {
     const points = buildDailyPL(holdings, candlesBySymbol, plMonths)
     chartCache = { key, points, months: plMonths, at: Date.now() }
     renderChart(points)
-    paint(rowsFromHoldings(getHoldings()))
+    paint(rowsFromHoldings(getVisibleHoldings()))
   }
 
   async function refreshQuotes(holdings, gen) {
     if (!holdings.length) return
     try {
-      const quotes = await fetchQuotes(holdings.map((h) => h.symbol))
+      const symbols = [...holdings.map((h) => h.symbol), ...FX_SYMBOLS]
+      const quotes = await fetchQuotes(symbols)
       if (disposed || gen !== softGen) return
       for (const q of quotes) {
-        if (q?.symbol) quoteCache.set(q.symbol, q)
+        if (FX_SYMBOLS.includes(q?.symbol)) applyFxQuote(q)
+        else if (q?.symbol) quoteCache.set(q.symbol, q)
       }
-      paint(rowsFromHoldings(getHoldings()))
+      paint(rowsFromHoldings(getVisibleHoldings()))
     } catch (err) {
       if (disposed || gen !== softGen) return
       // 已有畫面就不整頁錯誤；僅首次且無快取時提示
@@ -820,7 +971,7 @@ export async function renderPortfolio(root, { navigate }) {
 
   async function load({ forceChart = false } = {}) {
     const gen = ++softGen
-    const holdings = getHoldings()
+    const holdings = getVisibleHoldings()
     renderRangeTabs()
     if (!holdings.length) {
       cachedRows = []
@@ -836,10 +987,10 @@ export async function renderPortfolio(root, { navigate }) {
   }
 
   async function softRefresh() {
-    if (disposed || softRefreshing || document.hidden) return
+    if (disposed || softRefreshing || document.hidden || assetTab === 'alloc') return
     softRefreshing = true
     const gen = ++softGen
-    const holdings = getHoldings()
+    const holdings = getVisibleHoldings()
     try {
       if (!holdings.length) {
         paint([])
@@ -854,7 +1005,7 @@ export async function renderPortfolio(root, { navigate }) {
   async function runSearch(q) {
     const keyword = q.trim()
     if (!keyword) {
-      addResults.innerHTML = `<div class="state">輸入關鍵字搜尋後加入庫存</div>`
+      addResults.innerHTML = `<div class="state">${searchIdleText()}</div>`
       return
     }
     addResults.innerHTML = `<div class="state">搜尋中…</div>`
@@ -871,7 +1022,9 @@ export async function renderPortfolio(root, { navigate }) {
       const merged = [
         ...local,
         ...remote.filter((x) => x?.symbol && !seen.has(x.symbol)),
-      ].slice(0, 20)
+      ]
+        .filter(matchesHoldMarket)
+        .slice(0, 20)
 
       if (!merged.length) {
         addResults.innerHTML = `<div class="state">查無結果</div>`
@@ -905,6 +1058,25 @@ export async function renderPortfolio(root, { navigate }) {
     load({ forceChart: true }),
   )
 
+  fxToggle?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-fx]')
+    if (!btn) return
+    const next = btn.getAttribute('data-fx')
+    if ((next !== 'TWD' && next !== 'USD') || next === displayCurrency) return
+    displayCurrency = setDisplayCurrency(next)
+    paintFxToggle()
+    paint(cachedRows)
+    renderChart(chartPoints)
+  })
+
+  tabsEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-asset-tab]')
+    if (!btn) return
+    const next = btn.getAttribute('data-asset-tab')
+    if (!next || next === assetTab) return
+    showAssetTab(next)
+  })
+
   rangeTabsEl?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-pl-months]')
     if (!btn) return
@@ -912,7 +1084,7 @@ export async function renderPortfolio(root, { navigate }) {
     if (!PL_RANGE_OPTS.some((o) => o.months === next) || next === plMonths) return
     plMonths = setPlRangeMonths(next)
     renderRangeTabs()
-    const holdings = getHoldings()
+    const holdings = getVisibleHoldings()
     if (!holdings.length) {
       renderChart([])
       return
@@ -930,7 +1102,7 @@ export async function renderPortfolio(root, { navigate }) {
   root.querySelector('[data-action="cancel-form"]')?.addEventListener('click', () => {
     resetForm()
     if (!addInput.value.trim()) {
-      addResults.innerHTML = `<div class="state">輸入關鍵字搜尋後加入庫存</div>`
+      addResults.innerHTML = `<div class="state">${searchIdleText()}</div>`
     } else {
       runSearch(addInput.value)
     }
@@ -958,6 +1130,15 @@ export async function renderPortfolio(root, { navigate }) {
     const costPrice = Number(holdCost.value)
     const type = holdType.value === 'margin' ? 'margin' : 'spot'
     const editId = holdEditId.value
+    const isTw = isTaiwanSymbol(symbol)
+    if (holdMarket === 'tw' && !isTw) {
+      alert('此標的請到美股庫存分頁新增')
+      return
+    }
+    if (holdMarket === 'us' && isTw) {
+      alert('此標的請到台股庫存分頁新增')
+      return
+    }
     try {
       if (editId) {
         updateHolding(editId, { symbol, shares, costPrice, type })
@@ -1068,13 +1249,14 @@ export async function renderPortfolio(root, { navigate }) {
   document.addEventListener('visibilitychange', onVisibility)
   refreshTimer = setInterval(softRefresh, QUOTE_REFRESH_MS)
 
-  load()
+  showAssetTab(assetTab)
 
   return () => {
     disposed = true
     clearTimeout(searchTimer)
     clearLongPress()
     if (refreshTimer) clearInterval(refreshTimer)
+    if (typeof allocCleanup === 'function') allocCleanup()
     document.removeEventListener('visibilitychange', onVisibility)
   }
 }

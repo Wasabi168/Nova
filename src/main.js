@@ -43,7 +43,7 @@ function renderShell(activePath) {
           <span class="nav-ico">▦</span><span>行情</span>
         </button>
         <button data-nav="portfolio" class="${activePath === 'portfolio' ? 'active' : ''}">
-          <span class="nav-ico">▣</span><span>庫存</span>
+          <span class="nav-ico">▣</span><span>資產</span>
         </button>
         <button data-nav="search" class="${activePath === 'search' ? 'active' : ''}">
           <span class="nav-ico">⌕</span><span>搜尋</span>
