@@ -1,4 +1,6 @@
-const MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim()
+const MEASUREMENT_ID = (
+  import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-PDY424NMRW'
+).trim()
 
 let started = false
 
