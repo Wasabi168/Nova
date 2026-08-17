@@ -471,6 +471,7 @@ export async function renderPortfolio(root, { navigate }) {
   let assetTab = getAssetTab()
   let holdMarket = assetTab === 'us' ? 'us' : 'tw'
   let allocCleanup = null
+  let tabGen = 0
   let { col: sortCol, dir: sortDir } = getSortState()
   let plMonths = getPlRangeMonths()
   let cachedRows = []
@@ -561,23 +562,28 @@ export async function renderPortfolio(root, { navigate }) {
 
   async function showAssetTab(tab) {
     const next = tab === 'us' || tab === 'alloc' || tab === 'tw' ? tab : 'tw'
+    const gen = ++tabGen
     assetTab = setAssetTab(next)
     paintTabs()
+    if (typeof allocCleanup === 'function') {
+      allocCleanup()
+      allocCleanup = null
+    }
     if (next === 'alloc') {
       holdView.hidden = true
       if (headerActions) headerActions.hidden = true
       allocView.hidden = false
-      if (typeof allocCleanup === 'function') allocCleanup()
-      allocCleanup = await renderAllocation(allocView, {
+      const cleanup = await renderAllocation(allocView, {
         onOpenMarket: (market) => {
           showAssetTab(market)
         },
       })
+      if (gen !== tabGen) {
+        if (typeof cleanup === 'function') cleanup()
+        return
+      }
+      allocCleanup = cleanup
       return
-    }
-    if (typeof allocCleanup === 'function') {
-      allocCleanup()
-      allocCleanup = null
     }
     holdMarket = next
     holdView.hidden = false

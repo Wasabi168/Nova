@@ -150,6 +150,8 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
   const menuBackdrop = root.querySelector('#aa-ctx-backdrop')
 
   let disposed = false
+  const ac = new AbortController()
+  const { signal } = ac
   /** @type {Map<string, any>} */
   const quoteMap = new Map()
   let usdTwd = getAssetStore().liquid.usdTwdRate
@@ -503,7 +505,7 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
         showMenu('負債', [{ id: 'add-debt', label: '新增負債' }])
       }
     }
-  })
+  }, { signal })
 
   menuEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-aa-ctx]')
@@ -536,7 +538,7 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
       updateDebt(id, { excluded: !item.excluded })
       paint()
     }
-  })
+  }, { signal })
 
   // long-press / context menu on debt items
   listEl.addEventListener('contextmenu', (e) => {
@@ -544,7 +546,7 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
     if (!item) return
     e.preventDefault()
     openDebtMenu(item.getAttribute('data-id'))
-  })
+  }, { signal })
 
   let longPressTimer = null
   let longPressTriggered = false
@@ -576,7 +578,7 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
       longPressTriggered = true
       openDebtMenu(id)
     }, 500)
-  })
+  }, { signal })
   listEl.addEventListener('pointermove', (e) => {
     if (!longPressStart) return
     const dx = e.clientX - longPressStart.x
@@ -585,24 +587,24 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
       clearTimeout(longPressTimer)
       longPressStart = null
     }
-  })
+  }, { signal })
   const clearLp = () => {
     clearTimeout(longPressTimer)
     longPressStart = null
   }
-  listEl.addEventListener('pointerup', clearLp)
-  listEl.addEventListener('pointercancel', clearLp)
-  listEl.addEventListener('pointerleave', clearLp)
+  listEl.addEventListener('pointerup', clearLp, { signal })
+  listEl.addEventListener('pointercancel', clearLp, { signal })
+  listEl.addEventListener('pointerleave', clearLp, { signal })
 
   listEl.addEventListener('click', (e) => {
     if (!longPressTriggered) return
     longPressTriggered = false
     e.preventDefault()
     e.stopPropagation()
-  }, true)
+  }, { capture: true, signal })
 
-  menuBackdrop.addEventListener('click', hideMenu)
-  backdrop.addEventListener('click', closeSheet)
+  menuBackdrop.addEventListener('click', hideMenu, { signal })
+  backdrop.addEventListener('click', closeSheet, { signal })
 
   form.addEventListener('submit', (e) => {
     e.preventDefault()
@@ -626,7 +628,7 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
     } catch (err) {
       alert(err?.message || '儲存失敗')
     }
-  })
+  }, { signal })
 
   paint()
   refreshQuotes()
@@ -634,5 +636,6 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
   return () => {
     disposed = true
     clearTimeout(longPressTimer)
+    ac.abort()
   }
 }
