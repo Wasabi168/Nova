@@ -254,9 +254,9 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
 
     netEl.textContent = money(net, hidden)
     if (net != null && net > 0 && Number.isFinite(investTotal)) {
-      leverageEl.textContent = `槓桿 ${Math.round((investTotal / net) * 100)}%`
+      leverageEl.textContent = `槓桿比例 ${Math.round((investTotal / net) * 100)}%`
     } else {
-      leverageEl.textContent = '槓桿 —'
+      leverageEl.textContent = '槓桿比例 —'
     }
     eyeBtn.innerHTML = hidden
       ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.3 3.3 2 4.6l3.1 3.1C3.4 9.1 2.3 10.5 1.6 12c1.7 3.7 5.4 6.2 10.4 6.2 1.6 0 3.1-.3 4.4-.8l3.6 3.6 1.3-1.3L3.3 3.3ZM12 6.2c4.9 0 8.6 2.5 10.4 6.2-.7 1.4-1.7 2.6-3 3.5l-2.2-2.2A4.7 4.7 0 0 0 12 7.6c-.4 0-.8.1-1.2.2L9.2 6.2C10.1 6.3 11 6.2 12 6.2Zm0 3.1a2.7 2.7 0 0 1 2.7 2.7c0 .4-.1.8-.3 1.1l-3.5-3.5c.3-.2.7-.3 1.1-.3Z"/></svg>`
