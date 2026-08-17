@@ -1,4 +1,5 @@
 import './style.css'
+import { initAnalytics, trackPageView } from './analytics.js'
 import { renderWatchlist } from './views/watchlist.js'
 import { renderMarket } from './views/market.js'
 import { renderPortfolio } from './views/portfolio.js'
@@ -65,6 +66,7 @@ async function render() {
   const { path, params } = parseHash()
   const view = routes[path] || routes.watchlist
   const navPath = path === 'stock' ? 'stock' : path in routes ? path : 'watchlist'
+  trackPageView(navPath, params)
 
   app.innerHTML = renderShell(navPath)
   const page = app.querySelector('#page')
@@ -80,5 +82,6 @@ async function render() {
   }
 }
 
+initAnalytics()
 window.addEventListener('hashchange', render)
 render()
