@@ -22,35 +22,36 @@ function attachProxyGuards(label) {
   }
 }
 
+const proxy = {
+  '/api/yahoo': {
+    target: 'https://query1.finance.yahoo.com',
+    changeOrigin: true,
+    timeout: PROXY_MS,
+    proxyTimeout: PROXY_MS,
+    rewrite: (path) => path.replace(/^\/api\/yahoo/, ''),
+    headers: {
+      'User-Agent': 'Mozilla/5.0',
+    },
+    configure: attachProxyGuards('yahoo'),
+  },
+  '/api/twse': {
+    target: 'https://mis.twse.com.tw',
+    changeOrigin: true,
+    timeout: PROXY_MS,
+    proxyTimeout: PROXY_MS,
+    agent: twseAgent,
+    rewrite: (path) => path.replace(/^\/api\/twse/, ''),
+    headers: {
+      'User-Agent': 'Mozilla/5.0',
+      Referer: 'https://mis.twse.com.tw/',
+    },
+    configure: attachProxyGuards('twse'),
+  },
+}
+
 export default defineConfig({
   // GitHub Pages 專案站：https://Wasabi168.github.io/Nova/
   base: '/Nova/',
-  server: {
-    proxy: {
-      '/api/yahoo': {
-        target: 'https://query1.finance.yahoo.com',
-        changeOrigin: true,
-        timeout: PROXY_MS,
-        proxyTimeout: PROXY_MS,
-        rewrite: (path) => path.replace(/^\/api\/yahoo/, ''),
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-        },
-        configure: attachProxyGuards('yahoo'),
-      },
-      '/api/twse': {
-        target: 'https://mis.twse.com.tw',
-        changeOrigin: true,
-        timeout: PROXY_MS,
-        proxyTimeout: PROXY_MS,
-        agent: twseAgent,
-        rewrite: (path) => path.replace(/^\/api\/twse/, ''),
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          Referer: 'https://mis.twse.com.tw/',
-        },
-        configure: attachProxyGuards('twse'),
-      },
-    },
-  },
+  server: { proxy },
+  preview: { proxy },
 })

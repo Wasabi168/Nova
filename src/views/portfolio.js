@@ -42,7 +42,7 @@ const candleCache = new Map()
 /** @type {{ key: string, points: { date: string, value: number }[], at: number } | null} */
 let chartCache = null
 const CHART_CACHE_MS = 10 * 60 * 1000
-const CHART_FETCH_CONCURRENCY = 2
+const CHART_FETCH_CONCURRENCY = 4
 const CHART_RANGE = '1y'
 const PL_RANGE_KEY = 'nova.portfolio.plRange'
 const PL_RANGE_OPTS = [

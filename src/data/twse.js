@@ -1,4 +1,5 @@
 import { getSymbolMeta, resolveDisplayName } from './symbols.js'
+import { fetchUpstream } from './proxy.js'
 
 /** 常見以 .TW 出現但實際為上櫃的代號（可再擴充） */
 const KNOWN_OTC = new Set([
@@ -34,59 +35,9 @@ export function fromTwseCode(code, exchange) {
   return `${code}.TW`
 }
 
-const FETCH_MS = 8_000
-
-function twseBase() {
-  if (import.meta.env.DEV) return '/api/twse'
-  return ''
-}
-
-async function fetchJson(url) {
-  const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), FETCH_MS)
-  try {
-    const res = await fetch(url, { signal: ac.signal })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-async function fetchViaCorsProxy(url) {
-  const proxies = [
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  ]
-  let lastError
-  for (const build of proxies) {
-    try {
-      return await fetchJson(build(url))
-    } catch (err) {
-      lastError = err
-    }
-  }
-  throw lastError || new Error('無法取得台股行情')
-}
-
 async function twseFetch(exChList) {
   const query = `?ex_ch=${encodeURIComponent(exChList)}&json=1&delay=0`
-  const absolute = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp${query}`
-  const path = `/stock/api/getStockInfo.jsp${query}`
-  const base = twseBase()
-
-  if (base) {
-    // MIS 後端 IP 輪詢，第一次逾時後重試一次（換 IP），再不行改走 CORS
-    for (let i = 0; i < 2; i++) {
-      try {
-        return await fetchJson(`${base}${path}`)
-      } catch (err) {
-        if (i === 0) continue
-        console.warn('本機 TWSE 代理失敗，改走 CORS 代理', err)
-      }
-    }
-  }
-  return fetchViaCorsProxy(absolute)
+  return fetchUpstream('twse', `/stock/api/getStockInfo.jsp${query}`)
 }
 
 function parseNum(v) {

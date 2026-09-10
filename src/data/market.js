@@ -1,5 +1,6 @@
 import { getSymbolMeta, resolveDisplayName } from './symbols.js'
 import { isTaiwanSymbol, fetchTwseQuotes } from './twse.js'
+import { fetchUpstream } from './proxy.js'
 
 const SETTINGS_KEY = 'nova.settings'
 
@@ -38,44 +39,8 @@ export function replaceSettings(next = {}) {
   return getSettings()
 }
 
-function yahooBase() {
-  const { proxyBase } = getSettings()
-  if (proxyBase) return proxyBase.replace(/\/$/, '')
-  if (import.meta.env.DEV) return '/api/yahoo'
-  return ''
-}
-
-async function fetchViaCorsProxy(url) {
-  const proxies = [
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  ]
-
-  let lastError
-  for (const build of proxies) {
-    try {
-      const res = await fetch(build(url))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return await res.json()
-    } catch (err) {
-      lastError = err
-    }
-  }
-  throw lastError || new Error('無法取得行情資料')
-}
-
-async function yahooFetch(pathAndQuery) {
-  const base = yahooBase()
-  const absolute = `https://query1.finance.yahoo.com${pathAndQuery}`
-
-  if (base) {
-    const res = await fetch(`${base}${pathAndQuery}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  }
-
-  // 生產環境無自訂代理時，走公開 CORS 代理
-  return fetchViaCorsProxy(absolute)
+function yahooFetch(pathAndQuery) {
+  return fetchUpstream('yahoo', pathAndQuery)
 }
 
 function num(v, fallback = null) {
@@ -93,19 +58,26 @@ async function fetchYahooQuotes(symbols) {
     )
     return mapSparkResults(data?.spark?.result || [])
   } catch (err) {
-    // 無效代號單獨請求常回 404；改逐檔抓，略過失敗項
+    // 無效代號單獨請求常回 404；改並行逐檔抓，略過失敗項
     console.warn('Yahoo 批次報價失敗，改逐檔載入', err)
     const out = []
-    for (const symbol of list) {
-      try {
-        const data = await yahooFetch(
-          `/v7/finance/spark?symbols=${encodeURIComponent(symbol)}&range=1d&interval=1d`,
-        )
-        out.push(...mapSparkResults(data?.spark?.result || []))
-      } catch {
-        /* skip invalid symbol */
-      }
-    }
+    let cursor = 0
+    const concurrency = Math.min(4, list.length)
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (cursor < list.length) {
+          const symbol = list[cursor++]
+          try {
+            const data = await yahooFetch(
+              `/v7/finance/spark?symbols=${encodeURIComponent(symbol)}&range=1d&interval=1d`,
+            )
+            out.push(...mapSparkResults(data?.spark?.result || []))
+          } catch {
+            /* skip invalid symbol */
+          }
+        }
+      }),
+    )
     return out
   }
 }
