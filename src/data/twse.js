@@ -34,9 +34,23 @@ export function fromTwseCode(code, exchange) {
   return `${code}.TW`
 }
 
+const FETCH_MS = 8_000
+
 function twseBase() {
   if (import.meta.env.DEV) return '/api/twse'
   return ''
+}
+
+async function fetchJson(url) {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), FETCH_MS)
+  try {
+    const res = await fetch(url, { signal: ac.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.json()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function fetchViaCorsProxy(url) {
@@ -47,9 +61,7 @@ async function fetchViaCorsProxy(url) {
   let lastError
   for (const build of proxies) {
     try {
-      const res = await fetch(build(url))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return await res.json()
+      return await fetchJson(build(url))
     } catch (err) {
       lastError = err
     }
@@ -60,12 +72,19 @@ async function fetchViaCorsProxy(url) {
 async function twseFetch(exChList) {
   const query = `?ex_ch=${encodeURIComponent(exChList)}&json=1&delay=0`
   const absolute = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp${query}`
+  const path = `/stock/api/getStockInfo.jsp${query}`
   const base = twseBase()
 
   if (base) {
-    const res = await fetch(`${base}/stock/api/getStockInfo.jsp${query}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
+    // MIS 後端 IP 輪詢，第一次逾時後重試一次（換 IP），再不行改走 CORS
+    for (let i = 0; i < 2; i++) {
+      try {
+        return await fetchJson(`${base}${path}`)
+      } catch (err) {
+        if (i === 0) continue
+        console.warn('本機 TWSE 代理失敗，改走 CORS 代理', err)
+      }
+    }
   }
   return fetchViaCorsProxy(absolute)
 }

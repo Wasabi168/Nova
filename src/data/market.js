@@ -141,6 +141,15 @@ function mapSparkResults(results) {
   })
 }
 
+/** 跨分頁保留上次報價，避免資產配置切換後先顯示 0 */
+export const quoteCache = new Map()
+
+function rememberQuotes(quotes) {
+  for (const q of quotes) {
+    if (q?.symbol) quoteCache.set(q.symbol, q)
+  }
+}
+
 /**
  * 混搭報價：台股走證交所（接近即時），美股走 Yahoo（約延遲 15 分鐘）
  */
@@ -181,7 +190,9 @@ export async function fetchQuotes(symbols) {
     }
   }
 
-  return list.map((symbol) => bySymbol.get(symbol)).filter(Boolean)
+  const quotes = list.map((symbol) => bySymbol.get(symbol)).filter(Boolean)
+  rememberQuotes(quotes)
+  return quotes
 }
 
 /** 單檔詳細報價：台股優先證交所，美股／K 線細節用 Yahoo 補齊 */

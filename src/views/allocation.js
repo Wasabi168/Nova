@@ -1,4 +1,4 @@
-import { fetchQuotes } from '../data/market.js'
+import { fetchQuotes, quoteCache } from '../data/market.js'
 import { getHoldings } from '../data/portfolio.js'
 import { getSymbolMeta } from '../data/symbols.js'
 import { isTaiwanSymbol } from '../data/twse.js'
@@ -157,6 +157,27 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
   let usdTwd = getAssetStore().liquid.usdTwdRate
   let investUpdatedAt = 0
 
+  function seedQuotesFromCache() {
+    for (const h of getHoldings()) {
+      const cached = quoteCache.get(h.symbol)
+      if (cached) quoteMap.set(h.symbol, cached)
+    }
+    const storedRate = getAssetStore().liquid.usdTwdRate
+    if (storedRate != null && Number.isFinite(storedRate) && storedRate > 0) {
+      usdTwd = storedRate
+    }
+  }
+
+  function syncFromCache() {
+    if (disposed) return
+    seedQuotesFromCache()
+    if (quoteMap.size) investUpdatedAt = Date.now()
+    paint()
+  }
+
+  seedQuotesFromCache()
+  if (quoteMap.size) investUpdatedAt = Date.now()
+
   function hideMenu() {
     menuEl.hidden = true
     menuBackdrop.hidden = true
@@ -217,18 +238,19 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
 
   function investBuckets() {
     const buckets = {
-      bond: { value: 0, has: false, updatedAt: 0 },
-      tw: { value: 0, has: false, updatedAt: 0 },
-      us: { value: 0, has: false, updatedAt: 0 },
+      bond: { value: 0, quoted: false, held: false },
+      tw: { value: 0, quoted: false, held: false },
+      us: { value: 0, quoted: false, held: false },
     }
     for (const h of getHoldings()) {
       const quote = quoteMap.get(h.symbol)
       const name = holdingName(h, quote)
       const twd = holdingTwdValue(h, quote, usdTwd)
       const key = isBondLike(h.symbol, name) ? 'bond' : isTaiwanSymbol(h.symbol) ? 'tw' : 'us'
+      buckets[key].held = true
       if (twd != null) {
         buckets[key].value += twd
-        buckets[key].has = true
+        buckets[key].quoted = true
       }
     }
     return buckets
@@ -242,20 +264,19 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
     const usdInTwd = usdTwdValue != null ? store.liquid.usd * usdTwdValue : null
     const liquidTotal =
       usdInTwd != null ? store.liquid.twd + usdInTwd : store.liquid.usd > 0 ? null : store.liquid.twd
-    const investTotal =
-      buckets.bond.has || buckets.tw.has || buckets.us.has
-        ? buckets.bond.value + buckets.tw.value + buckets.us.value
-        : 0
-    const investHas = buckets.bond.has || buckets.tw.has || buckets.us.has
+    const investQuoted = buckets.bond.quoted || buckets.tw.quoted || buckets.us.quoted
+    const investHeld = buckets.bond.held || buckets.tw.held || buckets.us.held
+    const investTotal = buckets.bond.value + buckets.tw.value + buckets.us.value
+    const investDisplay = investQuoted ? investTotal : investHeld ? null : 0
     const countedDebts = store.debts.filter((d) => !d.excluded)
     const debtTotal = countedDebts.reduce((s, d) => s + d.amount, 0)
     const net =
-      liquidTotal != null && (investHas || investTotal === 0)
-        ? liquidTotal + (investHas ? investTotal : 0) - debtTotal
+      liquidTotal != null && (investQuoted || !investHeld)
+        ? liquidTotal + (investQuoted ? investTotal : 0) - debtTotal
         : null
 
     netEl.textContent = money(net, hidden)
-    if (net != null && net > 0 && Number.isFinite(investTotal)) {
+    if (net != null && net > 0 && investQuoted && Number.isFinite(investTotal)) {
       leverageEl.textContent = `槓桿比例 ${Math.round((investTotal / net) * 100)}%`
     } else {
       leverageEl.textContent = '槓桿比例 —'
@@ -271,9 +292,9 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
     const liquidUpdated = maxTs(store.liquid.twdUpdatedAt, store.liquid.usdUpdatedAt, store.liquid.rateUpdatedAt)
     const investUpdated = investUpdatedAt || Date.now()
     const debtUpdated = maxTs(...store.debts.map((d) => d.updatedAt))
-    const investPctBase = investHas && investTotal > 0 ? investTotal : 0
+    const investPctBase = investQuoted && investTotal > 0 ? investTotal : 0
     const liquidPctBase = liquidTotal != null && liquidTotal > 0 ? liquidTotal : 0
-    const assetBase = (liquidTotal || 0) + (investHas ? investTotal : 0)
+    const assetBase = (liquidTotal || 0) + (investQuoted ? investTotal : 0)
 
     const pct = (value, base) => {
       if (!base || value == null || !Number.isFinite(value)) return 0
@@ -324,11 +345,11 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
         id: 'invest',
         title: '投資',
         names: investNames,
-        total: investHas ? investTotal : 0,
+        total: investDisplay,
         updatedAt: investUpdated,
         expanded: store.expanded === 'invest',
         hidden,
-        percent: pct(investHas ? investTotal : 0, assetBase),
+        percent: pct(investQuoted ? investTotal : 0, assetBase),
         children: `
           ${renderInvestChild('bond', '債券', buckets.bond, pct(buckets.bond.value, investPctBase), hidden)}
           ${renderInvestChild('tw', '台股', buckets.tw, pct(buckets.tw.value, investPctBase), hidden)}
@@ -382,7 +403,7 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
           <span class="aa-item-sub action">更新價格</span>
         </span>
         <span class="aa-item-right">
-          <span class="aa-item-amt">${money(bucket.has ? bucket.value : 0, hidden)}</span>
+          <span class="aa-item-amt">${money(bucket.quoted ? bucket.value : bucket.held ? null : 0, hidden)}</span>
         </span>
       </button>
     `
@@ -633,9 +654,15 @@ export async function renderAllocation(root, { onOpenMarket } = {}) {
   paint()
   refreshQuotes()
 
-  return () => {
+  function dispose() {
     disposed = true
     clearTimeout(longPressTimer)
     ac.abort()
   }
+  dispose.refresh = () => {
+    if (disposed) return
+    syncFromCache()
+    refreshQuotes()
+  }
+  return dispose
 }

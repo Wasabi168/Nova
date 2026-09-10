@@ -3,6 +3,7 @@ import {
   fetchChart,
   searchYahoo,
   QUOTE_REFRESH_MS,
+  quoteCache,
 } from '../data/market.js'
 import {
   getHoldings,
@@ -36,8 +37,6 @@ const SORT_COLS = [
   { id: 'retYtd', label: '今年以來漲幅', align: 'right' },
 ]
 
-/** 跨分頁切換保留上次資料，避免每次重進都整頁卡住 */
-const quoteCache = new Map()
 /** @type {Map<string, any[]>} */
 const candleCache = new Map()
 /** @type {{ key: string, points: { date: string, value: number }[], at: number } | null} */
@@ -565,14 +564,14 @@ export async function renderPortfolio(root, { navigate }) {
     const gen = ++tabGen
     assetTab = setAssetTab(next)
     paintTabs()
-    if (typeof allocCleanup === 'function') {
-      allocCleanup()
-      allocCleanup = null
-    }
     if (next === 'alloc') {
       holdView.hidden = true
       if (headerActions) headerActions.hidden = true
       allocView.hidden = false
+      if (typeof allocCleanup === 'function') {
+        allocCleanup.refresh?.()
+        return
+      }
       const cleanup = await renderAllocation(allocView, {
         onOpenMarket: (market) => {
           showAssetTab(market)
@@ -590,7 +589,6 @@ export async function renderPortfolio(root, { navigate }) {
     if (headerActions) headerActions.hidden = false
     paintFxToggle()
     allocView.hidden = true
-    allocView.innerHTML = ''
     syncHoldCopy()
     closeAddPanel()
     await load()
